@@ -1,4 +1,5 @@
-package org.hustsse.spider.handler;
+package org.hustsse.spider.framework;
+
 
 public interface HandlerContext {
 
@@ -10,7 +11,10 @@ public interface HandlerContext {
 
 	// void pauseAndSkip();
 
-	void toSink();
+	/**
+	 * go to the sink
+	 */
+	void finished();
 
 	Object getAttachment();
 

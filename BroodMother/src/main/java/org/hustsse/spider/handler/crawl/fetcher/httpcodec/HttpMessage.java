@@ -84,9 +84,8 @@ public interface HttpMessage {
     void setProtocolVersion(HttpVersion version);
 
     /**
-     * Returns the content of this message.  If there is no content or
-     * {@link #isChunked()} returns {@code true}, an
-     * {@link ChannelBuffers#EMPTY_BUFFER} is returned.
+     * 返回该 http message 的 content，该方法将返回内部content的一个
+     * duplicate副本，以保证每次都可以得到一个写模式的ByteBuffer。
      */
     ByteBuffer getContent();
 
@@ -167,5 +166,5 @@ public interface HttpMessage {
     @Deprecated
     boolean isKeepAlive();
 
-    String getContentCharset() ;
+    String getContentStr();
 }

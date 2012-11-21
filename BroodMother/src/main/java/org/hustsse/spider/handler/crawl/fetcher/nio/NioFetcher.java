@@ -1,13 +1,11 @@
 package org.hustsse.spider.handler.crawl.fetcher.nio;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.ClosedChannelException;
-import java.nio.channels.FileChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
@@ -20,12 +18,13 @@ import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.hustsse.spider.Spider;
 import org.hustsse.spider.exception.BossException;
-import org.hustsse.spider.handler.Handler;
-import org.hustsse.spider.handler.HandlerContext;
+import org.hustsse.spider.framework.Handler;
+import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.DefaultHttpRequest;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.DefaultHttpResponse;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpCodecUtil;
@@ -36,20 +35,21 @@ import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpResponse;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpResponseStatus;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpVersion;
 import org.hustsse.spider.model.CrawlURL;
-import org.hustsse.spider.model.URL;
-import org.hustsse.spider.util.CommonUtils;
 import org.hustsse.spider.util.StringUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class NioFetcher implements Handler {
+	private static final Logger logger = LoggerFactory.getLogger(NioFetcher.class);
+
 	static final int DEFAULT_REACTOR_NUMS = Runtime.getRuntime().availableProcessors();
 	static final int DEFAULT_BOSS_NUMS = 1;
-	private Executor reactorExecutor;
 	private Reactor[] reactors;
 	private Boss[] boss;
-	private boolean isWakedByReactor = false;
 	private int curReactorIndex;
-	private Executor bossExecutor;
 	private int curBossIndex;
+
+	// 对http响应做摘要的算法
 
 	public NioFetcher(Executor bossExecutor, Executor reactorExecutor) {
 		this(bossExecutor, reactorExecutor, DEFAULT_BOSS_NUMS, DEFAULT_REACTOR_NUMS);
@@ -59,10 +59,17 @@ public class NioFetcher implements Handler {
 		this(bossExecutor, reactorExecutor, DEFAULT_BOSS_NUMS, reactorCount);
 	}
 
+	// 快捷方式，使用的线程池都是 newCached 的
+	public NioFetcher(int reactorCount) {
+		this(Executors.newCachedThreadPool(), Executors.newCachedThreadPool(), DEFAULT_BOSS_NUMS, reactorCount);
+	}
+
+	public NioFetcher() {
+		this(Executors.newCachedThreadPool(), Executors.newCachedThreadPool(), DEFAULT_BOSS_NUMS, DEFAULT_REACTOR_NUMS);
+	}
+
 	// bossCount暂时不开放，默认为1
 	private NioFetcher(Executor bossExecutor, Executor reactorExecutor, int bossCount, int reactorCount) {
-		this.bossExecutor = bossExecutor;
-		this.reactorExecutor = reactorExecutor;
 		reactors = new Reactor[reactorCount];
 		boss = new Boss[bossCount];
 		for (int i = 0; i < reactorCount; i++) {
@@ -73,17 +80,16 @@ public class NioFetcher implements Handler {
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
-	public void process(HandlerContext ctx, URL uri) {
-		CrawlURL uriProcessed = (CrawlURL) uri;
-		Object msg = uri.getPipeline().getMessage();
+	public void process(HandlerContext ctx, CrawlURL url) {
+		CrawlURL uriProcessed = (CrawlURL) url;
+		Object msg = url.getPipeline().getMessage();
 		// 初始
 		if (msg == null) {
 			try {
 				SocketChannel channel = SocketChannel.open();
 				channel.configureBlocking(false);
-				SocketAddress reomteAddress = new InetSocketAddress(uriProcessed.getHost(), uriProcessed.getPort());
+				SocketAddress reomteAddress = new InetSocketAddress(uriProcessed.getURL().getHost(), uriProcessed.getURL().getPort());
 
 				// 立即connect，成功则注册到Reactor
 				if (channel.connect(reomteAddress)) {
@@ -116,10 +122,10 @@ public class NioFetcher implements Handler {
 			 */
 			ByteBuffer segment = (ByteBuffer) msg;
 			List<ByteBuffer> rawResponse = appendToSegList(segment, uriProcessed);
-			uri.getPipeline().clearMessage();
+			url.getPipeline().clearMessage();
 
-			//读取完毕或失败，继续在pipeline中流转，否则暂停，等待下一片段的到来
-			if ((Integer) uri.getProcessorAttr(NioConstants._FETCH_STATUS) >= NioConstants.FETCH_FINISHED) {
+			// 读取完毕或失败，继续在pipeline中流转，否则暂停，等待下一片段的到来
+			if ((Integer) url.getProcessorAttr(NioConstants._FETCH_STATUS) >= NioConstants.FETCH_FINISHED) {
 				ByteBuffer merged = merge(rawResponse);
 				merged.flip(); // *** 设置为写出模式 ***
 
@@ -129,13 +135,7 @@ public class NioFetcher implements Handler {
 				HttpResponse response = decodeHttpResponse(merged.duplicate());
 				uriProcessed.setResponse(response);
 
-				// 1. write to file
-				String path = "R:\\" + uriProcessed.getHost() + ".html";
-				CommonUtils.toFile(merged, path);
-				// 3. test response content, write it to a file
-				String contentPath = "R:\\content_" + uriProcessed.getHost() + ".html";
-				CommonUtils.toFile(response.getContent(), contentPath);
-
+				// TODO 对content生成消息摘要，用于对内容判重
 				ctx.proceed();
 			} else {
 				ctx.pause();
@@ -160,7 +160,6 @@ public class NioFetcher implements Handler {
 			rawResponse = (List<ByteBuffer>) val;
 		}
 		rawResponse.add(segment);
-		System.out.println("=========="+rawResponse.size());
 		uriProcessed.setProcessorAttr(NioConstants._RAW_RESPONSE, rawResponse);
 		return rawResponse;
 	}
@@ -184,7 +183,6 @@ public class NioFetcher implements Handler {
 		String[] splitedInitialLine = splitInitialLine(readLine(merged));
 		HttpResponse r = new DefaultHttpResponse(HttpVersion.valueOf(splitedInitialLine[0]), new HttpResponseStatus(
 				Integer.valueOf(splitedInitialLine[1]), splitedInitialLine[2]));
-
 		// headers
 		State nextStep = readHeaders(r, merged);
 		// contents
@@ -209,17 +207,19 @@ public class NioFetcher implements Handler {
 	}
 
 	private void readVariableLengthContent(ByteBuffer merged, HttpResponse r) {
-		r.setContent(merged.slice());
+		ByteBuffer content = merged.slice();
+		r.setContent(content);
 	}
 
 	private void readFixedLengthContent(ByteBuffer buffer, HttpResponse message) {
 		long length = HttpHeaders.getContentLength(message, -1);
 		assert length <= Integer.MAX_VALUE;
 
+		// 为了防止拷贝，response的content与merged底层使用同一个数据结构，merged
+		// = 响应头 + headers
+		// +正文，前两者的内容不会太多，
 		buffer.limit(buffer.position() + (int) length);
-		ByteBuffer content = buffer.slice(); // 为了防止拷贝，response的content与merged底层使用同一个数据结构，merged
-												// = 响应头 + headers
-												// +正文，前两者的内容不会太多，
+		ByteBuffer content = buffer.slice();
 		message.setContent(content);
 	}
 
@@ -411,7 +411,6 @@ public class NioFetcher implements Handler {
 		for (ByteBuffer buffer : buffers) {
 			size += buffer.position();
 		}
-		System.out.println(size);
 		ByteBuffer merged = ByteBuffer.allocate(size);
 		for (ByteBuffer buffer : buffers) {
 			buffer.flip();
@@ -421,9 +420,9 @@ public class NioFetcher implements Handler {
 	}
 
 	private void sendHttpRequest(SocketChannel channel, CrawlURL url) throws IOException {
-		String host = url.getHost();
-		String path = url.getPath();
-		String query = url.getQuery();
+		String host = url.getURL().getEscapedHost();
+		String path = url.getURL().getEscapedPath();
+		String query = url.getURL().getEscapedQuery();
 		if (query != null) {
 			path += '?';
 			path += query;
@@ -435,7 +434,8 @@ public class NioFetcher implements Handler {
 		httpRequest.setHeader(HttpHeaders.Names.USER_AGENT, Spider.DEFAULT_USER_AGENT);
 		httpRequest.setHeader(HttpHeaders.Names.ACCEPT, "text/*");
 
-		channel.write(encodeHttpRequest(httpRequest)); // http 1.1的长连接能发多个请求吗？
+		ByteBuffer reqBuffer = encodeHttpRequest(httpRequest);
+		channel.write(reqBuffer); // http 1.1的长连接能发多个请求吗？
 	}
 
 	/**
@@ -451,6 +451,7 @@ public class NioFetcher implements Handler {
 	 * 各个平台上显示或者保存文本时的line seperator用什么字符是平台相关的，比如Unix系统里，每行结尾只有“换行”，即“\n”；
 	 * Windows系统里，每行结尾是“回车换行”，即“\r\n”；Mac系统里，每行结尾是“回车”，即"\r"。 <br>
 	 * 可以用如下方式得到平台相关的line seperator:
+	 *
 	 * <pre>
 	 * <code>
 	 *   newLine = new Formatter().format("%n").toString()
@@ -458,7 +459,8 @@ public class NioFetcher implements Handler {
 	 * </pre>
 	 *
 	 * <h2>URL的encoding</h2>
-	 * <p> URL最终作为Http请求行被发送时，由于发送时采用ASCII字符集，如何处理如中文这种字符？答案是使用一个ASCII的超集对其
+	 * <p>
+	 * URL最终作为Http请求行被发送时，由于发送时采用ASCII字符集，如何处理如中文这种字符？答案是使用一个ASCII的超集对其
 	 * 进行“百分号Encoding”，标准推荐使用UTF-8。当用户在浏览器中输入url时，会使用浏览器默认字符集对其encoding。
 	 *
 	 * @param request
@@ -466,18 +468,11 @@ public class NioFetcher implements Handler {
 	 * @see StringUtil#NEWLINE
 	 * @throws CharacterCodingException
 	 */
-	private ByteBuffer encodeHttpRequest(HttpRequest request) {
-		Charset charset = Charset.forName("ASCII"); // HTTP协议使用ASCII字符集编码进行传输
+	private ByteBuffer encodeHttpRequest(HttpRequest request) throws CharacterCodingException {
+		Charset charset = Charset.forName("ASCII"); // HTTP协议使用ASCII字符集进行传输
 		CharsetEncoder encoder = charset.newEncoder();
 		String requestStr = request.toRequestStr();
-		ByteBuffer result = null;
-		try {
-			result = encoder.encode(CharBuffer.wrap(requestStr));
-		} catch (CharacterCodingException e) {
-			e.printStackTrace();
-		}
-		assert result != null;
-		return result;
+		return encoder.encode(CharBuffer.wrap(requestStr));
 	}
 
 	public Boss nextBoss() {
@@ -577,11 +572,14 @@ public class NioFetcher implements Handler {
 						if (channel.finishConnect()) {
 							key.cancel();
 							nextReactor().register(channel, (CrawlURL) key.attachment());
+							// TODO 这里有个问题，因为register是异步的，有可能稍后才会真正地注册到一个selector上，但是在那之前已经发送请求了。
+							// 不过对结果没影响，在注册到selector前如果有数据到了，最后还是会select出来。
 							// 移交给Reactor后立刻发送http请求，考虑到Http请求一般不会太大（GET），目前的处理方式是一旦连接上立刻发送并假设一定可以发送成功
 							sendHttpRequest(channel, url);
 						}
 					} catch (IOException e) {
-						System.out.println("连接失败" + channel);
+						// TODO 重试？
+						logger.error("failed connecting server，url:\n" + url, e);
 						key.cancel();
 						e.printStackTrace();
 						try {
@@ -603,6 +601,12 @@ public class NioFetcher implements Handler {
 			}
 		}
 
+		/**
+		 * 注册一个Channel到Boss上，监听OP_CONNECT状态。如果Boss未启动，则 提交到BossExecutor中执行。
+		 *
+		 * @param channel
+		 * @param uri
+		 */
 		void register(SocketChannel channel, CrawlURL uri) {
 			if (!started) {
 				// Open a selector if this boss didn't start yet.

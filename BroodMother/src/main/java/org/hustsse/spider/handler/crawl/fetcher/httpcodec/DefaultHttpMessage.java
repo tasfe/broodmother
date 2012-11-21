@@ -16,6 +16,7 @@
 package org.hustsse.spider.handler.crawl.fetcher.httpcodec;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,6 +40,12 @@ public class DefaultHttpMessage implements HttpMessage {
 	// private ByteBuffer content = ByteBuffers.EMPTY_BUFFER;
 	private ByteBuffer content = null;
 	private boolean chunked;
+
+	static final String DEFAULT_CONTENT_CHARSET = "UTF-8";
+	// content字符集
+	private String contentCharset;
+	// content bytebuffer decode之后的字符串
+	private String contentStr;
 
 	/**
 	 * Creates a new instance.
@@ -141,24 +148,92 @@ public class DefaultHttpMessage implements HttpMessage {
 		this.version = version;
 	}
 
+	/**
+	 *
+	 */
 	public ByteBuffer getContent() {
-		return content;
+		return content.duplicate();
 	}
 
-	public String getContentCharset() {
-    	String contentType = HttpHeaders.getHeader(this, HttpHeaders.Names.CONTENT_TYPE);
-    	if(contentType != null && !contentType.isEmpty()) {
-    		String[] splited = contentType.split(";");
-    		if(splited != null && splited.length >= 2) {
-    			String[] splited2 = splited[1].split("=");
-    			if(splited2 != null && splited2.length >= 2) {
-    				return splited2[1].toUpperCase();
-    			}
-    		}
-    	}
-    	return null;
-    }
+	static Pattern charsetMetaPattern = Pattern.compile("<\\s*meta.*content\\s*=.*>" + // <meta
+																						// http-equiv="Content-Type"
+																						// content="text/html;charset=gb2312">
+			"|<\\s*meta.*charset\\s*=.*>" // <meta charset="gb2312">
+	, Pattern.CASE_INSENSITIVE);
+	static Pattern charsetAttrPattern = Pattern.compile("charset\\s*=\\s*.+['\"]", Pattern.CASE_INSENSITIVE);
 
+	public String getContentStr() {
+		if (contentStr != null)
+			return contentStr;
+
+		// 优先使用content type中指定的字符集
+		String charsetInHeader = getContentCharsetFromHeader();
+		if (charsetInHeader != null) {
+			this.contentCharset = charsetInHeader;
+			Charset c = Charset.forName(charsetInHeader);
+			contentStr = c.decode(getContent()).toString();
+			return contentStr;
+		}
+
+		/*
+		 * header中未指定charset时，尝试使用默认字符集解析content并查找META标签 <meta
+		 * http-equiv="Content-Type" content="text/html;charset=gb2312"> 或 HTML5
+		 * <meta charset="gb2312">。若查找到了，则重新对content解析。
+		 */
+		Charset c = Charset.forName(DEFAULT_CONTENT_CHARSET);
+		contentStr = c.decode(getContent()).toString();
+		// find the "meta" html tag
+		Matcher matchMeta = charsetMetaPattern.matcher(contentStr);
+		boolean foundMeta = matchMeta.find();// 只查找一次meta标签
+		if (foundMeta) {
+			String meta = matchMeta.group();
+			// find the "charset" or "content" attr
+			Matcher matchCharset = charsetAttrPattern.matcher(meta);
+			boolean foundCharset = matchCharset.find();
+			if (foundCharset) {
+				// get the charset
+				String charsetAttr = matchCharset.group();
+				String s = charsetAttr.split("=")[1];
+				if (s.startsWith("'") || s.startsWith("\""))
+					s = s.substring(1);
+				if (s.endsWith("'") || s.endsWith("\""))
+					s = s.substring(0, s.length() - 1);
+				System.out.println(s);
+				this.contentCharset = s;
+
+				// decode content & return
+				Charset foundCharsetInMeta = Charset.forName(s);
+				contentStr = foundCharsetInMeta.decode(getContent()).toString();
+				return contentStr;
+			}
+		}
+		/*
+		 * if no charset info in http headers, either no "meta" tag with charset
+		 * info in the html, use the default charset decode and return. This is
+		 * different with the browser,which will cache some bytes of the http
+		 * content, and then "guess" the charset used. See:
+		 * http://www.cnblogs.com/haichuan3000/articles/2147907.html
+		 */
+		return contentStr;
+	}
+
+	/**
+	 * 得到content使用字符集，注意，返回的字符集从content-type头解析而来。
+	 * 若没有在content-type中指定，则返回null，不会自动根据content判断所 用字符集。
+	 */
+	private String getContentCharsetFromHeader() {
+		String contentType = HttpHeaders.getHeader(this, HttpHeaders.Names.CONTENT_TYPE);
+		if (contentType != null && !contentType.isEmpty()) {
+			String[] splited = contentType.split(";");
+			if (splited != null && splited.length >= 2) {
+				String[] splited2 = splited[1].split("=");
+				if (splited2 != null && splited2.length >= 2) {
+					return splited2[1].toUpperCase();
+				}
+			}
+		}
+		return null;
+	}
 
 	@Override
 	public String toString() {

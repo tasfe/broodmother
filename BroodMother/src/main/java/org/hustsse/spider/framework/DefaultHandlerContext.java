@@ -1,7 +1,7 @@
-package org.hustsse.spider.handler;
+package org.hustsse.spider.framework;
 
 import org.hustsse.spider.exception.PipelineException;
-import org.hustsse.spider.pipeline.DefaultPipeline;
+import org.hustsse.spider.model.CrawlURL;
 
 public class DefaultHandlerContext implements HandlerContext {
 
@@ -17,12 +17,26 @@ public class DefaultHandlerContext implements HandlerContext {
 
 	@Override
 	public void proceed() {
-		if (next != null)
-			next.getHandler().process(next, pipeline.getURI());
+		if (next != null) {
+			try {
+				next.getHandler().process(next, pipeline.getURL());
+			}catch(Throwable e) {
+				toSink(pipeline.getURL(),new PipelineException(e));
+			}
+		}
 		else {
-			toSink();
+			finished();
 		}
 
+	}
+
+	/**
+	 * if exceptioned in any handler, jump to the sink.
+	 * @param url
+	 * @param cause
+	 */
+	private void toSink(CrawlURL url, PipelineException cause) {
+		pipeline.getSink().exceptionCaught(url, cause);
 	}
 
 	@Override
@@ -33,8 +47,8 @@ public class DefaultHandlerContext implements HandlerContext {
 	}
 
 	@Override
-	public void toSink() {
-		pipeline.getSink().uriSunk(pipeline.getURI());
+	public void finished() {
+		pipeline.getSink().uriSunk(pipeline.getURL());
 	}
 
 	@Override
@@ -59,5 +73,4 @@ public class DefaultHandlerContext implements HandlerContext {
 	public void setNext(DefaultHandlerContext next) {
 		this.next = next;
 	}
-
 }

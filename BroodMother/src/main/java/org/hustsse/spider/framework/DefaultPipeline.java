@@ -1,13 +1,13 @@
-package org.hustsse.spider.pipeline;
+package org.hustsse.spider.framework;
 
 import org.hustsse.spider.exception.PipelineException;
-import org.hustsse.spider.handler.DefaultHandlerContext;
-import org.hustsse.spider.handler.Handler;
+import org.hustsse.spider.model.CrawlController;
+import org.hustsse.spider.model.CrawlURL;
 import org.hustsse.spider.model.URL;
 
 public class DefaultPipeline implements Pipeline {
-
-	private URL uri;
+	/** the url that pipeline attach to*/
+	private CrawlURL url;
 	private PipelineSink sink = DoNothingSink.getInstance();
 	private DefaultHandlerContext  head;
 	private DefaultHandlerContext  tail;
@@ -18,7 +18,11 @@ public class DefaultPipeline implements Pipeline {
 	@Override
 	public void start() {
 		if(head != null){
-			head.getHandler().process(head,uri);
+			try {
+				head.getHandler().process(head,url);
+			}catch(Throwable e) {
+				sink.exceptionCaught(url,new PipelineException(e));
+			}
 		}
 	}
 
@@ -29,10 +33,18 @@ public class DefaultPipeline implements Pipeline {
 		isPaused = false;
 		this.resumeMsg = msg;
 		Handler breakpointHandler = breakpoint.getHandler();
-		breakpointHandler.process(breakpoint,uri);
+		try {
+			breakpointHandler.process(breakpoint,url);
+		}catch(Throwable e) {
+			sink.exceptionCaught(url,new PipelineException(e));
+		}
 	}
 
 	public DefaultPipeline(Handler... handlers) {
+		// 空pipeline
+		if(handlers == null || handlers.length == 0) {
+			return;
+		}
 		head = new DefaultHandlerContext(handlers[0],this);
 		tail = head;
 		if(handlers.length > 1){
@@ -44,10 +56,15 @@ public class DefaultPipeline implements Pipeline {
 		}
 	}
 
+	public DefaultPipeline(PipelineSink sink,Handler... handlers) {
+		this(handlers);
+		append(sink);
+	}
+
 
 	@Override
-	public URL getURI() {
-		return uri;
+	public CrawlURL getURL() {
+		return url;
 	}
 
 	@Override
@@ -56,11 +73,11 @@ public class DefaultPipeline implements Pipeline {
 	}
 
 	@Override
-	public void bind(PipelineSink sink) {
-		if(this.sink != null && this.sink != DoNothingSink.getInstance())
-			this.sink = sink;
+	public void append(PipelineSink sink) {
+		if(sink == null)
+			this.sink = DoNothingSink.getInstance();
 		else
-			throw new PipelineException("一但 attach 了 Pipeline sink 便不能更改！");
+			this.sink = sink;
 	}
 
 	public DefaultHandlerContext getBreakpoint() {
@@ -84,11 +101,11 @@ public class DefaultPipeline implements Pipeline {
 		}
 
 		@Override
-		public void uriSunk(URL e)  {
+		public void uriSunk(CrawlURL e)  {
 		}
 
 		@Override
-		public void exceptionCaught(URL e, PipelineException cause) {
+		public void exceptionCaught(CrawlURL e, PipelineException cause) {
 		}
 	}
 
@@ -99,11 +116,9 @@ public class DefaultPipeline implements Pipeline {
 	}
 
 	@Override
-	public void attachTo(URL uri) {
-		if(this.uri !=null || uri.getPipeline() != null)
-			throw new PipelineException("pipeline一旦绑定到URI上便不能改变！");
-		this.uri = uri;
-		uri.setPipeline(this);
+	public void attachTo(CrawlURL url) {
+		this.url = url;
+		url.setPipeline(this);
 	}
 
 	@Override
@@ -115,6 +130,4 @@ public class DefaultPipeline implements Pipeline {
 	public void clearMessage() {
 		resumeMsg = null;
 	}
-
-
 }
