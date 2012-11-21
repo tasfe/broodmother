@@ -72,7 +72,7 @@ public class Reactor implements Runnable {
 			try {
 				channel.register(selector, SelectionKey.OP_READ, uri);
 			} catch (ClosedChannelException e) {
-				e.printStackTrace();
+				// channel由于某些原因关闭了，比如发送http request失败等。忽略之
 			}
 		}
 	}

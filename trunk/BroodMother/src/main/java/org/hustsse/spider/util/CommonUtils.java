@@ -7,13 +7,16 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
+import org.hustsse.spider.model.CrawlURL;
+
 public class CommonUtils {
 
-	public static void toFile(ByteBuffer b,String file) {
+	public static void toFile(ByteBuffer b,String file, CrawlURL url) {
 		FileOutputStream out;
 		try {
 			out = new FileOutputStream(file);
 			FileChannel localFile = out.getChannel();
+			localFile.write(ByteBuffer.wrap(url.toString().getBytes()));
 			localFile.write(b);
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
