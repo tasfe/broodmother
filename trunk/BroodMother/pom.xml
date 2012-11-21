@@ -141,24 +141,22 @@
   </build>
   <dependencies>
   	<!-- logging start -->
+  	<!-- slf4j + logback -->
   	<dependency>
   		<groupId>org.slf4j</groupId>
   		<artifactId>slf4j-api</artifactId>
   		<version>1.6.4</version>
-  		<type>pom</type>
   	</dependency>
   	<dependency>
   		<groupId>ch.qos.logback</groupId>
   		<artifactId>logback-classic</artifactId>
   		<version>0.9.26</version>
-  		<type>jar</type>
   	</dependency>
   	<!-- 对jarkata common logging的调用桥接到slf4j，不再需要 jcl 依赖 -->
   	<dependency>
   		<groupId>org.slf4j</groupId>
   		<artifactId>jcl-over-slf4j</artifactId>
   		<version>1.6.4</version>
-  		<type>pom</type>
   	</dependency>
   	<!-- jcl hack,exclude all commons-logging dependency, see http://www.slf4j.org/faq.html#excludingJCL -->
   	<dependency>
@@ -172,7 +170,6 @@
   		<groupId>org.apache.commons</groupId>
   		<artifactId>commons-lang3</artifactId>
   		<version>3.1</version>
-  		<type>pom</type>
   	</dependency>
 	<dependency>
 	    <groupId>com.alibaba</groupId>
@@ -184,8 +181,12 @@
 		<groupId>org.jsoup</groupId>
 		<artifactId>jsoup</artifactId>
 		<version>1.4.1</version>
-		<type>jar</type>
-		<scope>compile</scope>
+	</dependency>
+
+	<dependency>
+		<groupId>org.springframework</groupId>
+		<artifactId>spring-context</artifactId>
+		<version>3.1.1.RELEASE</version>
 	</dependency>
   </dependencies>
 
