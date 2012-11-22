@@ -81,7 +81,6 @@ public class Frontier {
 					continue;
 				}
 				// redy queue是个空的，将它放到emptyQueues中，继续查看下个ready queue
-				// TODO schedule时记得把他拿出来
 				if(wq.isEmpty()) {
 					emptyQueues.add(key);
 					continue;
