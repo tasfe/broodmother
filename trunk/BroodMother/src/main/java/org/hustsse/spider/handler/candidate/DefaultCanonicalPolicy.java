@@ -11,7 +11,7 @@ public class DefaultCanonicalPolicy implements CanonicalPolicy {
 		DefaultCanonicalPolicy d = new DefaultCanonicalPolicy();
 		String[] urls = new String[] {
 				"https://www01.ab.com/",
-				"http://user:pwd@bbs.nju.edu.cn:81",
+				"http://user:pwd@bBs.nju.edu.cn:81",
 				"http://www.a.com/a/b/../c/./d",
 				"http://baidu.com/wd?q=%E6%8F%92%E4%BB%B6"
 		};
