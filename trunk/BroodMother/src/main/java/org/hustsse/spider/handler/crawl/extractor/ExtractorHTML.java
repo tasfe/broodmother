@@ -1,8 +1,11 @@
 package org.hustsse.spider.handler.crawl.extractor;
 
+import java.net.MalformedURLException;
+
 import org.hustsse.spider.exception.URLException;
 import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
+import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
 import org.hustsse.spider.model.URL;
 import org.jsoup.Jsoup;
@@ -12,7 +15,7 @@ import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ExtractorHTML implements Handler {
+public class ExtractorHTML  extends AbstractBeanNameAwareHandler {
 	Logger logger = LoggerFactory.getLogger(ExtractorHTML.class);
 
 	@Override
@@ -24,12 +27,12 @@ public class ExtractorHTML implements Handler {
 
 		// 查找base标签，设定derelative url使用的base url
 		Elements base = doc.select("base");
-		if(base != null && base.size()>0) {
+		if(base != null && base.size()>0 && base.first().hasAttr("href")) {
 			try {
 				URL baseURL = new URL(base.first().attr("href"));
 				crawlUrl.setBaseURL(baseURL);
-			}catch (URLException e) {
-				logger.info("定义错误的base标签："+base.first().html()+"，将使用自身继续相对路径的derelative。");
+			}catch (MalformedURLException e) {
+				logger.info("定义错误的base标签："+base.first().html()+"，将使用自身进行相对路径的derelative。URL："+crawlUrl.toString());
 			}
 		}
 
@@ -41,8 +44,9 @@ public class ExtractorHTML implements Handler {
 				URL outlink = new URL(crawlUrl.getBaseURL(), src);
 				//TODO create candidate pipeline
 				CrawlURL candidateURL = new CrawlURL(outlink);
+				candidateURL.setVia(crawlUrl.getURL());
 				crawlUrl.addCandidate(candidateURL);
-			}catch(URLException e) {
+			} catch (MalformedURLException e) {
 				logger.info("frame/iframe标签src发现不支持的协议："+ src);
 			}
 		}
@@ -54,9 +58,10 @@ public class ExtractorHTML implements Handler {
 				URL outlink = new URL(crawlUrl.getBaseURL(), href);
 				//TODO create candidate pipeline
 				CrawlURL candidateURL = new CrawlURL(outlink);
+				candidateURL.setVia(crawlUrl.getURL());
 				crawlUrl.addCandidate(candidateURL);
-			}catch(URLException e) {
-				logger.info("a标签href发现不支持的协议："+ href);
+			}catch(MalformedURLException e) {
+//				logger.info("a标签href发现不支持的协议："+ href);
 			}
 		}
 

@@ -4,6 +4,8 @@ import org.hustsse.spider.model.CrawlURL;
 
 public interface Pipeline {
 
+	public static Object EMPTY_MSG = new Object();
+
 	void start();
 
 	/**
@@ -32,4 +34,6 @@ public interface Pipeline {
 	Object getMessage();
 
 	void clearMessage();
+
+	HandlerContext getHandlerContext(String handlerName);
 }

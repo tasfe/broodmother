@@ -20,12 +20,12 @@ public class DefaultHandlerContext implements HandlerContext {
 		if (next != null) {
 			try {
 				next.getHandler().process(next, pipeline.getURL());
-			}catch(Throwable e) {
+			}catch(RuntimeException e) {
 				toSink(pipeline.getURL(),new PipelineException(e));
 			}
 		}
 		else {
-			finished();
+			finish();
 		}
 
 	}
@@ -47,7 +47,7 @@ public class DefaultHandlerContext implements HandlerContext {
 	}
 
 	@Override
-	public void finished() {
+	public void finish() {
 		pipeline.getSink().uriSunk(pipeline.getURL());
 	}
 
@@ -72,5 +72,19 @@ public class DefaultHandlerContext implements HandlerContext {
 
 	public void setNext(DefaultHandlerContext next) {
 		this.next = next;
+	}
+
+	@Override
+	public void jumpTo(String handlerName) {
+		if(handlerName == null)
+			throw new NullPointerException("必须指定handler的名称！");
+		HandlerContext ctx = pipeline.getHandlerContext(handlerName);
+		if(ctx == null)
+			throw new PipelineException("名为"+handlerName+"的handler不存在！");
+		try {
+			ctx.getHandler().process(ctx, pipeline.getURL());
+		}catch(RuntimeException e) {
+			toSink(pipeline.getURL(),new PipelineException(e));
+		}
 	}
 }

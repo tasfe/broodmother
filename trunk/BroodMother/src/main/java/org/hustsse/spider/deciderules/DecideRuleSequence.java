@@ -4,6 +4,14 @@ import java.util.List;
 
 import org.hustsse.spider.model.CrawlURL;
 
+/**
+ * 使用一个DecideRule序列判断一个url是否通过。当且仅当序列中所有Rule对url test
+ * 的结果都为PASS时才允许其通过，只要有一个Rule的结果是REJECT，DecideRuleSequence
+ * 即会将之拒绝。
+ *
+ * @author Administrator
+ *
+ */
 public class DecideRuleSequence implements DecideRule{
 
 	private List<DecideRule> rules;

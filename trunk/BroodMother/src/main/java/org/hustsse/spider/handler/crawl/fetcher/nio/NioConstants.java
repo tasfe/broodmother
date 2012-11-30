@@ -11,18 +11,26 @@ public class NioConstants {
 	 */
 
 	/**
-	 * 连接超时时刻，存储在CrawlURI的processorAttrs中。当某channel超过该时间还未连接上
-	 * 即判定为超时。
+	 * 连接超时时刻，存储在CrawlURI的processorAttrs中。当某channel超过该时间还未连接上 即判定为超时。
 	 */
 	public static final String _CONNECT_DEADLINE_NANOS = "connect deadline nanos";
 
-
-	//TODO 移入CrawlURI？毕竟其他Fetch实现也有可能需要跟踪其fetch状态
-	public static final String _FETCH_STATUS = "fetch status";
-	public static final Integer FETCH_ING = 2;
-	public static final Integer FETCH_FINISHED = 3;
-	public static final Integer FETCH_ERROR = 4;
 	public static final String _RAW_RESPONSE = "raw response";
 
+	public static final String _REQUEST_SEND_FINISHED = "request send finished";
+	public static final String _REQUEST_SIZE = "request size";
+	public static final String _REQUEST_SEND_TIMES = "request send times";
+	public static final String _REQUEST_ALREADY_SEND_SIZE = "request already send size";
+	public static final String _REQUEST_BUFFER = "request buffer";
+
+	public static final int WRITE_SPIN_COUNT = 16;
+
+	public static final String _LAST_SEND_REQUEST_MILLIS = "last send request millis";
+
+	public static final String _REQUEST_SEND_FINISHED_MILLIS = "request send finished millis";
+
+	public static final String _CONNECT_SUCCESS_MILLIS = "connect success millis";
+
+	public static final String _CONNECT_ATTEMPT_MILLIS = "connect attempt millis";
 
 }

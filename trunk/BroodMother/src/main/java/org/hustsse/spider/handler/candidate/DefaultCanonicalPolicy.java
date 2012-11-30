@@ -1,5 +1,7 @@
 package org.hustsse.spider.handler.candidate;
 
+import java.net.MalformedURLException;
+
 import javax.print.URIException;
 
 import org.hustsse.spider.model.CrawlURL;
@@ -7,7 +9,7 @@ import org.hustsse.spider.model.URL;
 
 public class DefaultCanonicalPolicy implements CanonicalPolicy {
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws MalformedURLException {
 		DefaultCanonicalPolicy d = new DefaultCanonicalPolicy();
 		String[] urls = new String[] {
 				"https://www01.ab.com/",

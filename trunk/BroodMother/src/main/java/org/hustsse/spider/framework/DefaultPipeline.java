@@ -1,5 +1,8 @@
 package org.hustsse.spider.framework;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.hustsse.spider.exception.PipelineException;
 import org.hustsse.spider.model.CrawlController;
 import org.hustsse.spider.model.CrawlURL;
@@ -12,6 +15,7 @@ public class DefaultPipeline implements Pipeline {
 	private DefaultHandlerContext  head;
 	private DefaultHandlerContext  tail;
 	private DefaultHandlerContext  breakpoint;
+	private Map<String, HandlerContext> ctxs = new HashMap<String, HandlerContext>(10);
 	private Object resumeMsg;
 	private boolean isPaused = false;
 
@@ -35,7 +39,7 @@ public class DefaultPipeline implements Pipeline {
 		Handler breakpointHandler = breakpoint.getHandler();
 		try {
 			breakpointHandler.process(breakpoint,url);
-		}catch(Throwable e) {
+		}catch(RuntimeException e) {
 			sink.exceptionCaught(url,new PipelineException(e));
 		}
 	}
@@ -50,6 +54,7 @@ public class DefaultPipeline implements Pipeline {
 		if(handlers.length > 1){
 			for (int i = 1; i < handlers.length; i++) {
 				DefaultHandlerContext cur = new DefaultHandlerContext(handlers[i],this);
+				ctxs.put(handlers[i].getName(), cur);
 				tail.setNext(cur);
 				tail = cur;
 			}
@@ -129,5 +134,10 @@ public class DefaultPipeline implements Pipeline {
 	@Override
 	public void clearMessage() {
 		resumeMsg = null;
+	}
+
+	@Override
+	public HandlerContext getHandlerContext(String handlerName) {
+		return ctxs.get(handlerName);
 	}
 }

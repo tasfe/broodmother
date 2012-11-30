@@ -12,9 +12,17 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.hustsse.spider.exception.ReactorException;
+import org.hustsse.spider.framework.DefaultPipeline;
 import org.hustsse.spider.model.CrawlURL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants.*;
+import static org.hustsse.spider.model.CrawlURL.*;
 
 public class Reactor implements Runnable {
+
+	Logger logger = LoggerFactory.getLogger(Reactor.class);
 
 	private static final int DEFAULT_RECEIVE_BUFFER_SIZE = 30 * 1024;
 	static final int MAX_CONNECT_RETRY_TIMES = 3;
@@ -27,13 +35,11 @@ public class Reactor implements Runnable {
 	private String threadName;
 	private Queue<Runnable> registerQueue = new LinkedBlockingQueue<Runnable>();
 	private Selector selector;
-	private int index;
 	private Executor reactorExecutor;
 	private boolean started;
 
 	public Reactor(Executor reactorExecutor, int index) {
 		this.reactorExecutor = reactorExecutor;
-		this.index = index;
 		threadName = "New I/O reactor线程 #" + index;
 		this.receiveBuffer = ByteBuffer.allocateDirect(DEFAULT_RECEIVE_BUFFER_SIZE);
 	}
@@ -70,7 +76,13 @@ public class Reactor implements Runnable {
 		@Override
 		public void run() {
 			try {
-				channel.register(selector, SelectionKey.OP_READ, uri);
+				// 如果http请求没有发送完毕，我们还需要监听OP_WRITE状态
+				Boolean requestSendFinished = (Boolean)uri.getProcessorAttr(_REQUEST_SEND_FINISHED);
+				if(Boolean.TRUE.equals(requestSendFinished)) {
+					channel.register(selector, SelectionKey.OP_READ, uri);
+				}else {
+					channel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, uri);
+				}
 			} catch (ClosedChannelException e) {
 				// channel由于某些原因关闭了，比如发送http request失败等。忽略之
 			}
@@ -89,13 +101,57 @@ public class Reactor implements Runnable {
 						SelectionKey key = iter.next();
 						iter.remove();
 						// 处理Key
-						processReadableKey(key);
+						if(key.isReadable()) {
+							processReadableKey(key);
+						}else if(key.isWritable()){
+							processWritableKey(key);
+						}
 					}
 					// TODO shutdown
 				}
 			} catch (IOException e) {
-				e.printStackTrace();
+				logger.warn("Unexpected exception in the selector loop.", e);
+
+				// Prevent possible consecutive immediate failures that lead to
+				// excessive CPU consumption.
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException t) {
+					// Ignore.
+				}
 			}
+		}
+	}
+
+	private void processWritableKey(SelectionKey key) {
+		CrawlURL url = (CrawlURL)key.attachment();
+		SocketChannel channel = (SocketChannel)key.channel();
+		ByteBuffer buffer = (ByteBuffer)url.getProcessorAttr(_REQUEST_BUFFER);
+		try {
+			// 发送http请求，若发送完成，取消OP_WRITE。
+			int writtenBytes = 0;
+			for (int i = WRITE_SPIN_COUNT; i > 0; i--) {
+				writtenBytes = channel.write(buffer);
+				//write success
+				if (writtenBytes != 0) {
+					url.setHandlerAttr(_LAST_SEND_REQUEST_MILLIS, System.currentTimeMillis());
+					url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, (Integer)url.getProcessorAttr(_REQUEST_ALREADY_SEND_SIZE) + writtenBytes);
+					url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer)url.getProcessorAttr(_REQUEST_SEND_TIMES) + 1);
+					break;
+				}
+			}
+			boolean reqSendFinished = !buffer.hasRemaining();
+			url.setHandlerAttr(_REQUEST_SEND_FINISHED, reqSendFinished);
+			url.setHandlerAttr(_REQUEST_SEND_FINISHED_MILLIS, reqSendFinished);
+			if(reqSendFinished) {
+				url.removeProcessorAttr(_REQUEST_BUFFER);
+				key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
+			}
+		} catch (IOException e) {
+			logger.error("error send http request ! URL: "+url);
+			cancelAndClose(key);
+			url.setFetchStatus(FETCH_FAILED);
+			url.getPipeline().resume(DefaultPipeline.EMPTY_MSG);
 		}
 	}
 
@@ -119,28 +175,44 @@ public class Reactor implements Runnable {
 		int ret = 0;
 		int readBytes = 0;
 		try {
-			while ((ret = channel.read(buffer)) > 0) {
+			while ((ret = channel.read(buffer)) > 0) {	// 在低速网络情况下会抛出：java.io.IOException: 远程主机强迫关闭了一个现有的连接。
 				readBytes += ret;
 				if (!buffer.hasRemaining()) {
 					break;
 				}
 			}
 			// 读取完毕了？设置URI的状态
-			uri.setProcessorAttr(NioConstants._FETCH_STATUS, ret < 0 ? NioConstants.FETCH_FINISHED : NioConstants.FETCH_ING);
+			uri.setFetchStatus(ret < 0 ? FETCH_SUCCESSED : FETCH_ING);
 			// 若本次读到了数据，无论是否读取完毕均resume pipeline执行，并将读取到的数据传递出去
 			if (readBytes > 0) {
 				// 从DirectBuffer拷贝数据到一个compact的Heap ByteBuffer，传递出去
-				ByteBuffer temp = ByteBuffer.allocate(buffer.position());
+				ByteBuffer msg = ByteBuffer.allocate(buffer.position());
 				buffer.flip();
-				temp.put(buffer);
-				uri.getPipeline().resume(temp);
+				msg.put(buffer);
+				uri.getPipeline().resume(msg);
 			}
 
 		} catch (IOException e) {
-			e.printStackTrace();
+			Object lastSendTime = uri.getProcessorAttr(_LAST_SEND_REQUEST_MILLIS);
+			Long conTime = (Long)uri.getProcessorAttr(_CONNECT_SUCCESS_MILLIS);
+			Integer sendReqTimes = (Integer)uri.getProcessorAttr(_REQUEST_SEND_TIMES);
+			Integer sendBytes = (Integer)uri.getProcessorAttr(_REQUEST_ALREADY_SEND_SIZE);
+			Integer requestSize = (Integer)uri.getProcessorAttr(_REQUEST_SIZE);
+			long now = System.currentTimeMillis();
+			String debug = "\n";
+			if(lastSendTime != null) {
+				debug += "距上次发送request时间（s）："+((now - (Long)lastSendTime)/1000);
+				debug += "\n一共发送request次数："+ sendReqTimes;
+				debug += "\n一共发送字节："+ sendBytes;
+				debug += "\n请求共有字节："+ requestSize;
+			}else {
+				debug += "未发送过request，距连接成功时间（s）："+((now - conTime)/1000);
+			}
+			logger.error("error read http response ! URL: "+uri+debug,e);
 			cancelAndClose(key);
 			// TODO 读取响应失败，重试？
-			uri.setProcessorAttr(NioConstants._FETCH_STATUS, NioConstants.FETCH_ERROR);
+			uri.setFetchStatus(FETCH_FAILED);
+			uri.getPipeline().resume(DefaultPipeline.EMPTY_MSG);
 		}
 
 		// 如果数据读取完毕，取消注册，关闭连接

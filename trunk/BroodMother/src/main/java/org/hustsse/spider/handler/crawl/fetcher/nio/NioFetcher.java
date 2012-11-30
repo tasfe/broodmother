@@ -1,5 +1,8 @@
 package org.hustsse.spider.handler.crawl.fetcher.nio;
 
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants.*;
+import static org.hustsse.spider.model.CrawlURL.*;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -21,10 +24,12 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import org.hustsse.spider.Spider;
+import org.apache.commons.lang3.StringUtils;
 import org.hustsse.spider.exception.BossException;
 import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
+import org.hustsse.spider.framework.Pipeline;
+import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.DefaultHttpRequest;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.DefaultHttpResponse;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpCodecUtil;
@@ -35,14 +40,15 @@ import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpResponse;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpResponseStatus;
 import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpVersion;
 import org.hustsse.spider.model.CrawlURL;
+import org.hustsse.spider.util.CommonUtils;
 import org.hustsse.spider.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class NioFetcher implements Handler {
+public class NioFetcher  extends AbstractBeanNameAwareHandler {
 	private static final Logger logger = LoggerFactory.getLogger(NioFetcher.class);
 
-	static final int DEFAULT_REACTOR_NUMS = Runtime.getRuntime().availableProcessors();
+	static final int DEFAULT_REACTOR_NUMS = Runtime.getRuntime().availableProcessors() * 2;
 	static final int DEFAULT_BOSS_NUMS = 1;
 	private Reactor[] reactors;
 	private Boss[] boss;
@@ -82,64 +88,77 @@ public class NioFetcher implements Handler {
 
 	@Override
 	public void process(HandlerContext ctx, CrawlURL url) {
-		CrawlURL uriProcessed = (CrawlURL) url;
 		Object msg = url.getPipeline().getMessage();
 		// 初始
 		if (msg == null) {
 			try {
 				SocketChannel channel = SocketChannel.open();
 				channel.configureBlocking(false);
-				SocketAddress reomteAddress = new InetSocketAddress(uriProcessed.getURL().getHost(), uriProcessed.getURL().getPort());
 
+				SocketAddress reomteAddress = new InetSocketAddress(url.getDns().getIp(), url.getURL().getPort());
 				// 立即connect，成功则注册到Reactor
 				if (channel.connect(reomteAddress)) {
-					nextReactor().register(channel, uriProcessed);
+					/*
+					 * 低速网络环境下（10K），在Reactor#processReableKey调用channel.read方法可能抛异常
+					 * ：java.io.IOException: 远程主机强迫关闭了一个现有的连接。 第一个异常抛出时连接数为60+，
+					 * 猜测是连接上之后过长时间没有活动，被server断掉了。
+					 *
+					 * 在连接上时设置connect time，在抛出异常时查看过去的时间。
+					 */
+					url.setHandlerAttr(_CONNECT_SUCCESS_MILLIS, System.currentTimeMillis());
 					// 连接成功后立刻发送http请求。考虑到Http请求一般不会太大（GET），目前的处理方式是一旦连接上立刻发送并假设一定可以发送成功
-					sendHttpRequest(channel, uriProcessed);
+					sendHttpRequest(channel, url);
+					ctx.pause();
+					nextReactor().register(channel, url);
 				} else {
+					url.setHandlerAttr(_CONNECT_ATTEMPT_MILLIS, System.currentTimeMillis());
 					// 失败则注册到Boss，监听其OP_CONNECT状态
 					long curNano = System.nanoTime();
-					uriProcessed.setProcessorAttr(NioConstants._CONNECT_DEADLINE_NANOS, curNano
-							+ NioConstants.DEFAULT_CONNECT_TIMEOUT_MILLIS * 1000 * 1000L);// 1ms=
-																							// 1000*1000ns
-					nextBoss().register(channel, uriProcessed);
+					url.setHandlerAttr(_CONNECT_DEADLINE_NANOS, curNano + DEFAULT_CONNECT_TIMEOUT_MILLIS * 1000 * 1000L);
+					// pause before register，boss/reactor线程可能在pause之前resume
+					ctx.pause();
+					nextBoss().register(channel, url);
 				}
 
-				ctx.pause();
 			} catch (IOException e) {
-				// TODO 发送http请求失败了，重试？
-				e.printStackTrace();
+				logger.debug("发送http请求失败，url：{},重试次数：{}", new Object[] { url, url.getRetryTimes(), e });
+				url.setFetchStatus(FETCH_FAILED);
+				ctx.finish();
 			}
-		} else {// 读到了数据
-			/*
-			 * nio方式每次读取一个片段,Composite ByteBuffer在这里就
-			 * 发挥作用了,它能将这些小片的ByteBuffer组合起来,就像一块 连续的ByteBuffer使用它。
-			 *
-			 * 稍次的处理方式是用一个可以动态扩容的ByteBuffer，会发生 内存拷贝。
-			 *
-			 * 我们没有Netty CompositeChannelBuffer那样的现成制品，
-			 * 采用的方式是：首先使用一个List<ByteBuffer>存储直到接收 完毕，为了解析方便再将其复制到一个连续ByteBuffer
-			 */
-			ByteBuffer segment = (ByteBuffer) msg;
-			List<ByteBuffer> rawResponse = appendToSegList(segment, uriProcessed);
+
+			return;
+		}
+
+		// resumed
+		int fetchStatus = url.getFetchStatus();
+		switch (fetchStatus) {
+		case FETCH_FAILED:
+			url.setNeedRetry(true);
+			ctx.finish();
+			return;
+		case FETCH_ING:
+			appendToSegList((ByteBuffer) msg, url);
 			url.getPipeline().clearMessage();
+			ctx.pause();
+			return;
+		case FETCH_SUCCESSED:
+			ByteBuffer segment = (ByteBuffer) msg;
+			List<ByteBuffer> responseSegments = appendToSegList(segment, url);
+			ByteBuffer merged = merge(responseSegments);
+			merged.flip(); // *** 设置为写出模式 ***
 
-			// 读取完毕或失败，继续在pipeline中流转，否则暂停，等待下一片段的到来
-			if ((Integer) url.getProcessorAttr(NioConstants._FETCH_STATUS) >= NioConstants.FETCH_FINISHED) {
-				ByteBuffer merged = merge(rawResponse);
-				merged.flip(); // *** 设置为写出模式 ***
+			// raw http response(ByteBuffer形式，未解析)和解析之后的HttpResponse（但是Content依然是ByteBuffer形式），
+			// are backed by the SAME buffer,be careful to modify them
+			url.setHandlerAttr(_RAW_RESPONSE, merged); // 后续processor会用到原始http响应么？不需要的话可以删除之
+			CommonUtils.toFile(merged.duplicate(), "R:\\www_topit_me.html", url);
+			HttpResponse response = decodeHttpResponse(merged.duplicate());
+			url.setResponse(response);
 
-				// raw response & http response are backed by the SAME buffer,
-				// be careful to modify them
-				uriProcessed.setProcessorAttr(NioConstants._RAW_RESPONSE, merged); // 后续processor会用到原始http响应么？不需要的话可以删除之
-				HttpResponse response = decodeHttpResponse(merged.duplicate());
-				uriProcessed.setResponse(response);
-
-				// TODO 对content生成消息摘要，用于对内容判重
-				ctx.proceed();
-			} else {
-				ctx.pause();
-			}
+			// TODO 对content生成消息摘要，用于对内容判重
+			ctx.proceed();
+			return;
+		default:
+			return;
 		}
 	}
 
@@ -152,16 +171,16 @@ public class NioFetcher implements Handler {
 	 */
 	@SuppressWarnings("unchecked")
 	private List<ByteBuffer> appendToSegList(ByteBuffer segment, CrawlURL uriProcessed) {
-		Object val = uriProcessed.getProcessorAttr(NioConstants._RAW_RESPONSE);
-		List<ByteBuffer> rawResponse;
+		Object val = uriProcessed.getProcessorAttr(_RAW_RESPONSE);
+		List<ByteBuffer> responseSegments;
 		if (val == null) {
-			rawResponse = new LinkedList<ByteBuffer>();
+			responseSegments = new LinkedList<ByteBuffer>();
 		} else {
-			rawResponse = (List<ByteBuffer>) val;
+			responseSegments = (List<ByteBuffer>) val;
 		}
-		rawResponse.add(segment);
-		uriProcessed.setProcessorAttr(NioConstants._RAW_RESPONSE, rawResponse);
-		return rawResponse;
+		responseSegments.add(segment);
+		uriProcessed.setHandlerAttr(_RAW_RESPONSE, responseSegments);
+		return responseSegments;
 	}
 
 	protected static enum State {
@@ -180,7 +199,10 @@ public class NioFetcher implements Handler {
 	 */
 	private HttpResponse decodeHttpResponse(ByteBuffer merged) {
 		// response 第一行
-		String[] splitedInitialLine = splitInitialLine(readLine(merged));
+		String firstline = readLine(merged);
+		String[] splitedInitialLine = splitInitialLine(firstline);
+		if (!firstline.toLowerCase().startsWith("http"))
+			System.out.println("=============" + firstline);
 		HttpResponse r = new DefaultHttpResponse(HttpVersion.valueOf(splitedInitialLine[0]), new HttpResponseStatus(
 				Integer.valueOf(splitedInitialLine[1]), splitedInitialLine[2]));
 		// headers
@@ -214,11 +236,17 @@ public class NioFetcher implements Handler {
 	private void readFixedLengthContent(ByteBuffer buffer, HttpResponse message) {
 		long length = HttpHeaders.getContentLength(message, -1);
 		assert length <= Integer.MAX_VALUE;
+		int contentEndPostion = buffer.position() + (int) length;
+		// 读取完毕，但内容不全 TODO 这么处理合适么？
+		if(contentEndPostion > buffer.capacity()) {
+			readVariableLengthContent(buffer, message);
+			return;
+		}
 
 		// 为了防止拷贝，response的content与merged底层使用同一个数据结构，merged
 		// = 响应头 + headers
 		// +正文，前两者的内容不会太多，
-		buffer.limit(buffer.position() + (int) length);
+		buffer.limit(contentEndPostion);
 		ByteBuffer content = buffer.slice();
 		message.setContent(content);
 	}
@@ -419,10 +447,19 @@ public class NioFetcher implements Handler {
 		return merged;
 	}
 
+	/**
+	 * 组装http请求并发送
+	 *
+	 * @param channel
+	 * @param url
+	 * @throws IOException
+	 */
 	private void sendHttpRequest(SocketChannel channel, CrawlURL url) throws IOException {
 		String host = url.getURL().getEscapedHost();
 		String path = url.getURL().getEscapedPath();
 		String query = url.getURL().getEscapedQuery();
+		if (StringUtils.isEmpty(path))
+			path = "/";
 		if (query != null) {
 			path += '?';
 			path += query;
@@ -431,11 +468,35 @@ public class NioFetcher implements Handler {
 		HttpRequest httpRequest = new DefaultHttpRequest(HttpVersion.HTTP_1_0, HttpMethod.GET, path);
 		httpRequest.setHeader(HttpHeaders.Names.HOST, host);
 		httpRequest.setHeader(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
-		httpRequest.setHeader(HttpHeaders.Names.USER_AGENT, Spider.DEFAULT_USER_AGENT);
+		// httpRequest.setHeader(HttpHeaders.Names.USER_AGENT,
+		// Spider.DEFAULT_USER_AGENT);
+		httpRequest.setHeader(HttpHeaders.Names.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1; rv:16.0) Gecko/20100101 Firefox/16.0");
 		httpRequest.setHeader(HttpHeaders.Names.ACCEPT, "text/*");
 
 		ByteBuffer reqBuffer = encodeHttpRequest(httpRequest);
-		channel.write(reqBuffer); // http 1.1的长连接能发多个请求吗？
+		// 一些统计信息
+		url.setHandlerAttr(_REQUEST_SIZE, reqBuffer.capacity());
+		url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, 0);
+		url.setHandlerAttr(_REQUEST_SEND_TIMES, 0);
+		int writtenBytes = 0;
+		for (int i = WRITE_SPIN_COUNT; i > 0; i--) {
+			writtenBytes = channel.write(reqBuffer);
+			if (writtenBytes != 0) {
+				url.setHandlerAttr(_LAST_SEND_REQUEST_MILLIS, System.currentTimeMillis());
+				url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, writtenBytes);
+				url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer) url.getProcessorAttr(_REQUEST_SEND_TIMES) + 1);
+				break;
+			}
+		}
+		// 99%的情况都会一次性发送完毕，不会注册到reactor上，但是以防万一还是做点处理。
+		boolean reqSendFinished = !reqBuffer.hasRemaining();
+		url.setHandlerAttr(_REQUEST_SEND_FINISHED, reqSendFinished);
+		if (!reqSendFinished) {
+			url.setHandlerAttr(_REQUEST_BUFFER, reqBuffer); // save the
+																// request
+																// buffer for
+																// next sending
+		}
 	}
 
 	/**
@@ -504,6 +565,24 @@ public class NioFetcher implements Handler {
 			threadName = "New I/O boss线程 #" + index;
 		}
 
+		/**
+		 * fail the url fetch, cancel the key registion and close the channel,
+		 * and resume the pipeline.
+		 *
+		 * @param k
+		 */
+		private void failAndResumePipeline(SelectionKey k) {
+			CrawlURL url = (CrawlURL) k.attachment();
+			url.setFetchStatus(FETCH_FAILED);
+			k.cancel();
+			try {
+				k.channel().close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			url.getPipeline().resume(Pipeline.EMPTY_MSG);
+		}
+
 		@Override
 		public void run() {
 			Thread.currentThread().setName(threadName);
@@ -540,18 +619,20 @@ public class NioFetcher implements Handler {
 			for (Iterator<SelectionKey> i = keys.iterator(); i.hasNext();) {
 				SelectionKey k = i.next();
 				CrawlURL u = (CrawlURL) k.attachment();
-				Long connectDeadlineNanos = (Long) u.getProcessorAttr(NioConstants._CONNECT_DEADLINE_NANOS);
+				Long connectDeadlineNanos = (Long) u.getProcessorAttr(_CONNECT_DEADLINE_NANOS);
 				if (connectDeadlineNanos > 0 && currentTimeNanos > connectDeadlineNanos) {
-					System.out.println("uri" + u + "连接失败！");
+					int duration = getConAttemptDuration(u);
+					logger.debug("连接服务器超时，距尝试连接时刻(s)：{},url：{},重试次数：{}", new Object[] { duration, u, u.getRetryTimes() });
 					// cancel the key and close the channel
-					k.cancel();
-					try {
-						k.channel().close();
-					} catch (IOException e) {
-						e.printStackTrace();
-					}
+					failAndResumePipeline(k);
 				}
 			}
+		}
+
+		private int getConAttemptDuration(CrawlURL u) {
+			long now = System.currentTimeMillis();
+			long duration = (now - (Long) (u.getProcessorAttr(_CONNECT_ATTEMPT_MILLIS))) / 1000;
+			return (int) duration;
 		}
 
 		/**
@@ -565,29 +646,44 @@ public class NioFetcher implements Handler {
 			for (Iterator<SelectionKey> i = selectedKeys.iterator(); i.hasNext();) {
 				SelectionKey key = i.next();
 				i.remove();
+
 				SocketChannel channel = (SocketChannel) key.channel();
 				CrawlURL url = (CrawlURL) key.attachment();
 				if (key.isConnectable()) {
+					boolean isConnected = false;
+
+					// try to finish connect,
+					// 如果超时，抛出异常：java.net.ConnectException: Connection timed out
+					// WIN7下默认超时时间经测试在20s左右
+					// 在连接数很多时超时现象严重
 					try {
-						if (channel.finishConnect()) {
-							key.cancel();
-							nextReactor().register(channel, (CrawlURL) key.attachment());
-							// TODO 这里有个问题，因为register是异步的，有可能稍后才会真正地注册到一个selector上，但是在那之前已经发送请求了。
-							// 不过对结果没影响，在注册到selector前如果有数据到了，最后还是会select出来。
-							// 移交给Reactor后立刻发送http请求，考虑到Http请求一般不会太大（GET），目前的处理方式是一旦连接上立刻发送并假设一定可以发送成功
-							sendHttpRequest(channel, url);
-						}
-					} catch (IOException e) {
-						// TODO 重试？
-						logger.error("failed connecting server，url:\n" + url, e);
-						key.cancel();
-						e.printStackTrace();
-						try {
-							channel.close();
-						} catch (IOException e1) {
-							e1.printStackTrace();
-						}
+						isConnected = channel.finishConnect();
+					} catch (IOException e2) {
+						// connect timed out
+						logger.debug("连接服务器超时，距尝试连接时刻(s)：{},url：{},重试次数：{}",
+								new Object[] { getConAttemptDuration(url), url, url.getRetryTimes(), e2 });
+						failAndResumePipeline(key);
+						return;
 					}
+
+					// connect successed
+					if (isConnected) {
+						url.setHandlerAttr(_CONNECT_SUCCESS_MILLIS, System.currentTimeMillis());
+						key.cancel();
+						try {
+							sendHttpRequest(channel, url);
+							nextReactor().register(channel, url);
+						} catch (IOException e) {
+							// send http request failed
+							logger.debug("发送http请求失败，url：{},重试次数：{}", new Object[] { url, url.getRetryTimes(), e });
+							failAndResumePipeline(key);
+						}
+						return;
+					}
+
+					// connect failed，较少见
+					logger.debug("连接服务器失败，url：{},重试次数：{}", new Object[] { url, url.getRetryTimes() });
+					failAndResumePipeline(key);
 				}
 			}
 		}

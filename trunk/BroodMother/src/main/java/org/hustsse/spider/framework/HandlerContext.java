@@ -5,8 +5,6 @@ public interface HandlerContext {
 
 	void proceed();
 
-	// void jumpTo(String handlerName);
-
 	void pause();
 
 	// void pauseAndSkip();
@@ -14,12 +12,14 @@ public interface HandlerContext {
 	/**
 	 * go to the sink
 	 */
-	void finished();
+	void finish();
 
 	Object getAttachment();
 
 	void setAttachment(Object attachment);
 
 	Handler getHandler();
+
+	void jumpTo(String handlerName);
 
 }

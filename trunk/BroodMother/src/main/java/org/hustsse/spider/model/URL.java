@@ -9,9 +9,11 @@ import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.text.Normalizer;
 
-import org.hustsse.spider.exception.URLException;
-
 import sun.nio.cs.ThreadLocalCoders;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  *
@@ -33,56 +35,59 @@ public class URL {
 	 * DEFAULT_HTTPS_PORT); }
 	 */
 
-
+	@JsonIgnore
 	private java.net.URL url;
 	// url的形式： protocol://host:port/path?query#fragment,暂不考虑userinfo
-	private String protocal;
+	@JsonIgnore
+	private String protocol;
+	@JsonIgnore
 	private String host;
+	@JsonIgnore
 	private String escapedHost;
+	@JsonIgnore
 	private String decodedHost;
+	@JsonIgnore
 	private Integer port;
+	@JsonIgnore
 	private String path;
+	@JsonIgnore
 	private String escapedPath;
+	@JsonIgnore
 	private String decodedPath;
+	@JsonIgnore
 	private String query;
+	@JsonIgnore
 	private String escapedQuery;
+	@JsonIgnore
 	private String decodedQuery;
+	@JsonIgnore
 	private String fragment;
-	private String urlToStr;
+	@JsonIgnore
 	private String escapedUrlString; // escaped
+	@JsonIgnore
 	private String decodedUrlString; // decoded
 
-
-	public static void main(String[] args) {
-		URL u = new URL("http://a:b@www.a.com/a/b");
-		URL f = new URL(u,"http://www.baidu.com/b/../c/d");
-
-		System.out.println(u.getBackedURL().getPath());
-	}
+	private String urlString;
 
 	/**
-	 * 一些简化：
-	 * 1. 忽略掉userinfo http://user:pwd@www.a.com == http://www.a.com
+	 * 一些简化： 1. 忽略掉userinfo http://user:pwd@www.a.com == http://www.a.com
 	 *
-	 * @param url 可以是decoded形式如“中国”，也可以是escaped形式如“%E8%BF%99%E4%B8%AA”。
-	 * 如果是decoded，getEscapedXXX()方法将返回编码之后的形式，getDecodedXXX()将返回原值；
-	 * 如果是escaped，getEscapedXXX()方法将返回原值，getDecodedXXX()将返回解码之后的形式；
-	 * getXXX()一直会返回原值。
+	 * @param url
+	 *            可以是decoded形式如“中国”，也可以是escaped形式如“%E8%BF%99%E4%B8%AA”。
+	 *            如果是decoded，getEscapedXXX()方法将返回编码之后的形式，getDecodedXXX()将返回原值；
+	 *            如果是escaped，getEscapedXXX()方法将返回原值，getDecodedXXX()将返回解码之后的形式；
+	 *            getXXX()一直会返回原值。
+	 * @throws MalformedURLException
 	 */
-	public URL(String url) {
-		try {
-			this.url = new java.net.URL(url);
-		} catch (MalformedURLException e) {
-			throw new URLException("不支持的协议：" + url, e);
-		}
+	@JsonCreator
+	public URL(@JsonProperty("urlString") String url) throws MalformedURLException {
+		this.url = new java.net.URL(url);
+		urlString = this.url.toString();
 	}
 
-	public URL(URL base, String relativeURL) {
-		try {
-			this.url = new java.net.URL(base.getBackedURL(), relativeURL);
-		} catch (MalformedURLException e) {
-			throw new URLException("未指定的协议或不支持的协议：" + relativeURL + "，base url：" + base, e);
-		}
+	public URL(URL base, String relativeURL) throws MalformedURLException {
+		this.url = new java.net.URL(base.getBackedURL(), relativeURL);
+		urlString = this.url.toString();
 	}
 
 	public synchronized String getHost() {
@@ -160,10 +165,10 @@ public class URL {
 	}
 
 	public synchronized String getProtocol() {
-		if (protocal == null) {
-			protocal = url.getProtocol();
+		if (protocol == null) {
+			protocol = url.getProtocol();
 		}
-		return protocal;
+		return protocol;
 	}
 
 	private java.net.URL getBackedURL() {
@@ -171,9 +176,7 @@ public class URL {
 	}
 
 	public synchronized String toString() {
-		if (urlToStr == null)
-			urlToStr = url.toString();
-		return urlToStr;
+		return urlString;
 	}
 
 	public synchronized String toEscapedString() {
@@ -188,6 +191,14 @@ public class URL {
 			return decodedUrlString;
 		decodedUrlString = decode(toString());
 		return decodedUrlString;
+	}
+
+	public String getUrlString() {
+		return urlString;
+	}
+
+	public void setUrlString(String urlString) {
+		this.urlString = urlString;
 	}
 
 	/**
@@ -274,7 +285,10 @@ public class URL {
 			}
 			bb.clear();
 			for (;;) {
-				assert (n - i >= 2);
+				// assert (n - i >= 2);
+				// 改动：如果%后两位超过了长度，停止解析并返回原字符串
+				if (i + 2 >= n)
+					return s;
 				bb.put(decode(s.charAt(++i), s.charAt(++i)));
 				if (++i >= n)
 					break;
