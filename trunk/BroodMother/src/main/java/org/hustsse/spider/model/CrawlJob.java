@@ -13,12 +13,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.support.FileSystemXmlApplicationContext;
 
 /**
- * 一个CrawlJob代表一个爬取任务，即一个job dir下的子目录。
+ * 一个CrawlJob代表一个爬取任务，即一个job directory下的子目录。
  *
  * 1. 初始化：set up crawl controller，把容器建起来，子部件都装配好。
  * 2. launch：spider类的工作移到这里来.启动boss线程，从frontier拿uri处理.
  * 3. Spider类只负责启动jobScanner
- * @author Administrator
+ * @author Anderson
  *
  */
 public class CrawlJob {

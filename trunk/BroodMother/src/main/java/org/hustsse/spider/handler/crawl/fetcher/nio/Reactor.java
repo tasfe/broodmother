@@ -1,5 +1,18 @@
 package org.hustsse.spider.handler.crawl.fetcher.nio;
 
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants.WRITE_SPIN_COUNT;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._CONNECT_SUCCESS_MILLIS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._LAST_SEND_REQUEST_MILLIS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_ALREADY_SEND_SIZE;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_BUFFER;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_SEND_FINISHED;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_SEND_FINISHED_MILLIS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_SEND_TIMES;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_SIZE;
+import static org.hustsse.spider.model.CrawlURL.FETCH_FAILED;
+import static org.hustsse.spider.model.CrawlURL.FETCH_ING;
+import static org.hustsse.spider.model.CrawlURL.FETCH_SUCCESSED;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
@@ -16,9 +29,6 @@ import org.hustsse.spider.framework.DefaultPipeline;
 import org.hustsse.spider.model.CrawlURL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants.*;
-import static org.hustsse.spider.model.CrawlURL.*;
 
 public class Reactor implements Runnable {
 
@@ -77,7 +87,7 @@ public class Reactor implements Runnable {
 		public void run() {
 			try {
 				// 如果http请求没有发送完毕，我们还需要监听OP_WRITE状态
-				Boolean requestSendFinished = (Boolean)uri.getProcessorAttr(_REQUEST_SEND_FINISHED);
+				Boolean requestSendFinished = (Boolean)uri.getHandlerAttr(_REQUEST_SEND_FINISHED);
 				if(Boolean.TRUE.equals(requestSendFinished)) {
 					channel.register(selector, SelectionKey.OP_READ, uri);
 				}else {
@@ -126,7 +136,7 @@ public class Reactor implements Runnable {
 	private void processWritableKey(SelectionKey key) {
 		CrawlURL url = (CrawlURL)key.attachment();
 		SocketChannel channel = (SocketChannel)key.channel();
-		ByteBuffer buffer = (ByteBuffer)url.getProcessorAttr(_REQUEST_BUFFER);
+		ByteBuffer buffer = (ByteBuffer)url.getHandlerAttr(_REQUEST_BUFFER);
 		try {
 			// 发送http请求，若发送完成，取消OP_WRITE。
 			int writtenBytes = 0;
@@ -135,8 +145,8 @@ public class Reactor implements Runnable {
 				//write success
 				if (writtenBytes != 0) {
 					url.setHandlerAttr(_LAST_SEND_REQUEST_MILLIS, System.currentTimeMillis());
-					url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, (Integer)url.getProcessorAttr(_REQUEST_ALREADY_SEND_SIZE) + writtenBytes);
-					url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer)url.getProcessorAttr(_REQUEST_SEND_TIMES) + 1);
+					url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, (Integer)url.getHandlerAttr(_REQUEST_ALREADY_SEND_SIZE) + writtenBytes);
+					url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer)url.getHandlerAttr(_REQUEST_SEND_TIMES) + 1);
 					break;
 				}
 			}
@@ -144,7 +154,7 @@ public class Reactor implements Runnable {
 			url.setHandlerAttr(_REQUEST_SEND_FINISHED, reqSendFinished);
 			url.setHandlerAttr(_REQUEST_SEND_FINISHED_MILLIS, reqSendFinished);
 			if(reqSendFinished) {
-				url.removeProcessorAttr(_REQUEST_BUFFER);
+				url.removeHandlerAttr(_REQUEST_BUFFER);
 				key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
 			}
 		} catch (IOException e) {
@@ -193,11 +203,11 @@ public class Reactor implements Runnable {
 			}
 
 		} catch (IOException e) {
-			Object lastSendTime = uri.getProcessorAttr(_LAST_SEND_REQUEST_MILLIS);
-			Long conTime = (Long)uri.getProcessorAttr(_CONNECT_SUCCESS_MILLIS);
-			Integer sendReqTimes = (Integer)uri.getProcessorAttr(_REQUEST_SEND_TIMES);
-			Integer sendBytes = (Integer)uri.getProcessorAttr(_REQUEST_ALREADY_SEND_SIZE);
-			Integer requestSize = (Integer)uri.getProcessorAttr(_REQUEST_SIZE);
+			Object lastSendTime = uri.getHandlerAttr(_LAST_SEND_REQUEST_MILLIS);
+			Long conTime = (Long)uri.getHandlerAttr(_CONNECT_SUCCESS_MILLIS);
+			Integer sendReqTimes = (Integer)uri.getHandlerAttr(_REQUEST_SEND_TIMES);
+			Integer sendBytes = (Integer)uri.getHandlerAttr(_REQUEST_ALREADY_SEND_SIZE);
+			Integer requestSize = (Integer)uri.getHandlerAttr(_REQUEST_SIZE);
 			long now = System.currentTimeMillis();
 			String debug = "\n";
 			if(lastSendTime != null) {

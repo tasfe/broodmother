@@ -16,24 +16,14 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
+ * URL，作为URL标识符的容器，被CrawlURL使用。
  *
+ * 以java.net.URL为基础，缓存URL的各个子部分，并负责URL的Decode/Encode。
  *
- * @author Administrator
+ * @author Anderson
  *
  */
 public class URL {
-	/*
-	 * private static final int DEFAULT_HTTP_PORT = 80; private static final int
-	 * DEFAULT_HTTPS_PORT = 443;
-	 *
-	 * private static final String PROTOCOL_HTTP = "http"; private static final
-	 * String PROTOCOL_HTTPS = "https";
-	 *
-	 * private static final Map<String,Integer> PROTOCOL_PORT_MAP = new
-	 * HashMap<String, Integer>(); static{ PROTOCOL_PORT_MAP.put(PROTOCOL_HTTP,
-	 * DEFAULT_HTTP_PORT); PROTOCOL_PORT_MAP.put(PROTOCOL_HTTPS,
-	 * DEFAULT_HTTPS_PORT); }
-	 */
 
 	@JsonIgnore
 	private java.net.URL url;
@@ -85,6 +75,12 @@ public class URL {
 		urlString = this.url.toString();
 	}
 
+	/**
+	 * 使用基准URL和相对URL构造一个URL。
+	 * @param base base url for derelative
+	 * @param relativeURL 相对路径
+	 * @throws MalformedURLException
+	 */
 	public URL(URL base, String relativeURL) throws MalformedURLException {
 		this.url = new java.net.URL(base.getBackedURL(), relativeURL);
 		urlString = this.url.toString();

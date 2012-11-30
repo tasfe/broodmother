@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.hustsse.spider.handler.candidate.FrontierPreparer;
 import org.hustsse.spider.model.CrawlController;
 import org.hustsse.spider.model.CrawlURL;
+import org.hustsse.spider.workqueue.DelayedWorkQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

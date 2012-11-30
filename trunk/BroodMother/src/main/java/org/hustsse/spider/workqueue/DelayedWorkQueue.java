@@ -1,12 +1,22 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.workqueue;
 
+import java.util.concurrent.DelayQueue;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
 
+import org.hustsse.spider.framework.WorkQueue;
+
+/**
+ * WorkQueue的Wrapper，含有Delay信息，配合{@link DelayQueue}使用实现WorkQueue的Politeness
+ * Interval。
+ *
+ * @author Anderson
+ *
+ */
 public class DelayedWorkQueue implements Delayed {
 
 	WorkQueue wq;
-	// 唤醒时刻,nanoSecond
+	/** 唤醒时刻,nanoSecond */
 	long wakeTime;
 
 	/**

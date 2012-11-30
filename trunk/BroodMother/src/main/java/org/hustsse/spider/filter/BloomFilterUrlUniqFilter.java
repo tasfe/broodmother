@@ -1,15 +1,15 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.filter;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.hustsse.spider.framework.UrlUniqFilter;
+import org.hustsse.spider.util.BloomFilter;
 
+/**
+ * 基于BloomFilter的Url判重器。
+ *
+ * @author Anderson
+ *
+ */
 public class BloomFilterUrlUniqFilter implements UrlUniqFilter {
-	private static Logger logger = LoggerFactory.getLogger(BloomFilterUrlUniqFilter.class);
-
-	public static void main(String[] args) {
-		BloomFilterUrlUniqFilter u = new BloomFilterUrlUniqFilter();
-		System.out.println(u);
-	}
 
 	private BloomFilter bloom;
 	// 需要内存约11.5M
@@ -38,8 +38,7 @@ public class BloomFilterUrlUniqFilter implements UrlUniqFilter {
 	@Override
 	public boolean delete(String canonicalUrl) {
 		// TODO 用一个白名单记录删除的url？
-		logger.error("bloom filter based uri unique filter doesn't support deletion!");
-		return false;
+		throw new UnsupportedOperationException("bloom filter based uri unique filter doesn't support deletion!");
 	}
 
 }

@@ -53,8 +53,6 @@ public class InetAddressUtil {
 	/**
 	 * Returns InetAddress for passed <code>host</code> IF its in IPV4 quads
 	 * format (e.g. 128.128.128.128).
-	 * <p>
-	 * TODO: Move to an AddressParsingUtil class.
 	 *
 	 * @param ip host ip
 	 * @return InetAddress IF the passed name was an IP address, else null.

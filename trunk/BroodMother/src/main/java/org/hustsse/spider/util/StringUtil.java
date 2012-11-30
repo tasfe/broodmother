@@ -18,6 +18,8 @@ package org.hustsse.spider.util;
 import java.util.Formatter;
 
 /**
+ * ----- This class is borrowed from Netty project. -----
+ *
  * String utility class.
  *
  * @author <a href="http://www.jboss.org/netty/">The Netty Project</a>

@@ -1,19 +1,13 @@
 package org.hustsse.spider.framework;
 
 import java.io.File;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.hustsse.spider.exception.CrawlJobException;
 import org.hustsse.spider.model.CrawlJob;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.support.FileSystemXmlApplicationContext;
 
 /**
  * 扫描job dir，每个目录当做一个job，为其创建一个CrawlJob对象， initiate和launch。

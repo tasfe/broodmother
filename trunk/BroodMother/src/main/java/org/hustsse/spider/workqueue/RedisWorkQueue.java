@@ -1,4 +1,4 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.workqueue;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -7,8 +7,6 @@ import java.util.Set;
 import org.hustsse.spider.exception.DequeueFailedException;
 import org.hustsse.spider.exception.EnqueueFailedException;
 import org.hustsse.spider.model.CrawlURL;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -18,14 +16,24 @@ import redis.clients.jedis.Transaction;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/**
+ * WorkQueue基于redis的实现。每个WorkQueue在Redis中以一个[key--sortedSet]键值对形式存在，
+ * 元素的Score为该URL的priority。
+ *
+ * @author Anderson
+ *
+ */
 public class RedisWorkQueue extends AbstractWorkQueue {
+	/** 序列化时用的字符集 */
 	private static final String DEFAULT_SERIALIZE_CHARSET = "UTF-8";
+	/** 使用的jedis连接池 */
 	private JedisPool jedisPool;
-
-	private static Logger logger = LoggerFactory.getLogger(RedisWorkQueue.class);
+	/** Jackson Json Util */
 	private ObjectMapper jackson;
+	/** Serialized WorkQueue Key */
+	private byte[] serializedKey;
 
-	public RedisWorkQueue(String key, JedisPool jedisPool,ObjectMapper jackson) {
+	public RedisWorkQueue(String key, JedisPool jedisPool, ObjectMapper jackson) {
 		super(key);
 		this.jedisPool = jedisPool;
 		this.jackson = jackson;
@@ -39,25 +47,23 @@ public class RedisWorkQueue extends AbstractWorkQueue {
 			try {
 				con.zadd(getSerializedKey(), (double) u.getPriority(), serializeCrawlUrl(u));
 			} catch (Exception e) {
-				logger.error("failed to enqueue url to WorkQueue[{}],url: {}", new Object[] { workQueueKey, u, e });
 				jedisPool.returnBrokenResource(con);
 				// do not return the same object twice
 				con = null;
-				throw new EnqueueFailedException(e);
+				throw new EnqueueFailedException("failed to enqueue url to WorkQueue[" + workQueueKey + "],url: " + u, e);
 			} finally {
 				if (con != null)
 					jedisPool.returnResource(con);
 			}
-		}catch(EnqueueFailedException e) {
+		} catch (EnqueueFailedException e) {
 			throw e;
 		} catch (Exception e) {
-			logger.error("failed to borrow an connection", e);
-			throw new EnqueueFailedException(e);
+			throw new EnqueueFailedException("failed to borrow an connection", e);
 		}
 	}
 
 	@Override
-	public CrawlURL dequeue(){
+	public CrawlURL dequeue() {
 		Jedis con = null;
 		try {
 			con = getConnection();
@@ -72,38 +78,53 @@ public class RedisWorkQueue extends AbstractWorkQueue {
 
 				return deserializeCrawlUrl(result.get().iterator().next());
 			} catch (Exception e) {
-				logger.error("failed to dequeue,WorkQueue：{}", workQueueKey, e);
 				jedisPool.returnBrokenResource(con);
 				// do not return the same object twice
 				con = null;
-				throw new DequeueFailedException(e);
+				throw new DequeueFailedException("failed to dequeue,WorkQueue[" + workQueueKey + "] ", e);
 			} finally {
 				if (con != null)
 					jedisPool.returnResource(con);
 			}
 		} catch (Exception e) {
-			logger.error("failed to borrow an connection", e);
-			throw new DequeueFailedException(e);
+			throw new DequeueFailedException("failed to borrow an connection", e);
 		}
 	}
 
+	/**
+	 * borrow a connection from pool
+	 *
+	 * @return
+	 */
 	private Jedis getConnection() {
 		return jedisPool.getResource();
 	}
 
+	/**
+	 * 得到序列化之后的workQueueKey
+	 *
+	 * @return
+	 */
 	private byte[] getSerializedKey() {
-		byte[] bytes = null;
+		if (serializedKey != null)
+			return serializedKey;
+
 		try {
-			bytes = workQueueKey.getBytes(DEFAULT_SERIALIZE_CHARSET);
+			serializedKey = workQueueKey.getBytes(DEFAULT_SERIALIZE_CHARSET);
 		} catch (UnsupportedEncodingException e) {
 			throw new RuntimeException("平台不支持" + DEFAULT_SERIALIZE_CHARSET + "字符集?!", e);
 		}
-		return bytes;
+		return serializedKey;
 	}
 
+	/**
+	 * 序列化一个CrawlURL对象。首先用Jackson将其json化，再将其使用默认字符集转换成字节数组返回。
+	 *
+	 * @param url
+	 * @return
+	 */
 	private byte[] serializeCrawlUrl(CrawlURL url) {
 		byte[] bytes = null;
-
 		try {
 			bytes = jackson.writeValueAsBytes(url);
 		} catch (JsonProcessingException e) {
@@ -112,6 +133,12 @@ public class RedisWorkQueue extends AbstractWorkQueue {
 		return bytes;
 	}
 
+	/**
+	 * 反序列化CrawlURL
+	 *
+	 * @param bytes
+	 * @return
+	 */
 	private CrawlURL deserializeCrawlUrl(byte[] bytes) {
 		CrawlURL u;
 		try {
@@ -131,18 +158,16 @@ public class RedisWorkQueue extends AbstractWorkQueue {
 				Long count = con.zcard(getSerializedKey());
 				return count;
 			} catch (Exception e) {
-				logger.error("failed to get count of WorkQueue：{}", workQueueKey, e);
 				jedisPool.returnBrokenResource(con);
 				// do not return the same object twice
 				con = null;
-				throw new RuntimeException(e);
+				throw e;
 			} finally {
 				if (con != null)
 					jedisPool.returnResource(con);
 			}
 		} catch (Exception e) {
-			logger.error("failed to borrow an connection", e);
-			throw new RuntimeException(e);
+			throw new RuntimeException("failed to get count of WorkQueue", e);
 		}
 	}
 }

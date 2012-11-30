@@ -2,8 +2,6 @@ package org.hustsse.spider.handler.crawl.extractor;
 
 import java.net.MalformedURLException;
 
-import org.hustsse.spider.exception.URLException;
-import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
