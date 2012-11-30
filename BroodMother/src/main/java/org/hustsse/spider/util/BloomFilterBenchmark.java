@@ -1,13 +1,14 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.util;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+
 /**
- * A (very) simple benchmark to evaluate the performance of the Bloom filter class.
+ * Bloom filter test.
  *
- * @author Magnus Skjegstad
+ * @author Anderson
  */
 public class BloomFilterBenchmark {
     static int elementCount = 50000; // Number of elements to test

@@ -1,12 +1,18 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.workqueue;
 
+import org.hustsse.spider.framework.WorkQueue;
 
-
+/**
+ * WorkQueue的抽象实现，提供了大部分具体实现可以共用的Key、上次入队时间、Politeness间隔、元素上限相关逻辑。
+ *
+ * @author Anderson
+ *
+ */
 public abstract class AbstractWorkQueue implements WorkQueue {
 	protected String workQueueKey;
 	protected long lastDequeueTime;
 	protected long politenessInterval;
-	/** 最大可容纳的元素个数，<=0则不限长 */
+	/** 最大可容纳的元素个数，默认无限制 */
 	protected long maxLength = -1;
 
 	public AbstractWorkQueue(String key, long maxLength) {
@@ -57,6 +63,5 @@ public abstract class AbstractWorkQueue implements WorkQueue {
 	public boolean isEmpty() {
 		return count() == 0;
 	}
-
 
 }

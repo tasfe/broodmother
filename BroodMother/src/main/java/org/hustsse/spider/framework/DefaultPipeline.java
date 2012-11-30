@@ -4,9 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.hustsse.spider.exception.PipelineException;
-import org.hustsse.spider.model.CrawlController;
 import org.hustsse.spider.model.CrawlURL;
-import org.hustsse.spider.model.URL;
 
 public class DefaultPipeline implements Pipeline {
 	/** the url that pipeline attach to*/

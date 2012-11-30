@@ -1,13 +1,10 @@
 package org.hustsse.spider.handler.crawl.writer;
 
 import java.io.File;
-import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 
-import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
-import org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants;
 import org.hustsse.spider.model.CrawlURL;
 import org.hustsse.spider.util.CommonUtils;
 

@@ -1,0 +1,15 @@
+<ehcache xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="ehcache.xsd" updateCheck="true"
+	monitoring="autodetect" dynamicConfig="true">
+
+	<diskStore path="ehcache_store" />
+
+	<defaultCache maxEntriesLocalHeap="0" eternal="false" diskExpiryThreadIntervalSeconds="120"
+		timeToIdleSeconds="1200" timeToLiveSeconds="1200" memoryStoreEvictionPolicy="LRU">
+	</defaultCache>
+
+
+	<cache name="dnsCache" timeToIdleSeconds="0" timeToLiveSeconds="0" overflowToDisk="true"
+		maxEntriesLocalHeap="500" maxEntriesLocalDisk="100000" />
+
+</ehcache>

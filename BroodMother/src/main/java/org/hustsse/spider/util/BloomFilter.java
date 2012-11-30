@@ -1,4 +1,4 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.util;
 
 import java.nio.charset.Charset;
 import java.security.MessageDigest;
@@ -6,7 +6,18 @@ import java.security.NoSuchAlgorithmException;
 import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * 布隆过滤器的简单实现。关于BloomFilter的理论见这里
+ * http://www.cnblogs.com/allensun/archive/2011/02/16/1956532.html
+ *
+ * @author Anderson
+ *
+ */
 public class BloomFilter {
+	private static Logger logger = LoggerFactory.getLogger(BloomFilter.class);
 	/** vector长度 */
 	private int m;
 	/** 预期元素数量(最大值) */
@@ -19,6 +30,7 @@ public class BloomFilter {
 	BitSet vector;
 
 	static final Charset charset = Charset.forName("UTF-8");
+	// 生成消息摘要的算法
 	static final String algorithmName = "MD5";
 	static final MessageDigest digestFunction;
 	static {
@@ -33,8 +45,10 @@ public class BloomFilter {
 
 	/**
 	 *
-	 * @param falsePositiveExpected 当元素数量到达预期时，能容忍的误判率
-	 * @param elementsNumExpected 预期存放元素个数
+	 * @param falsePositiveExpected
+	 *            当元素数量到达预期时，能容忍的误判率
+	 * @param elementsNumExpected
+	 *            预期存放元素个数
 	 */
 	public BloomFilter(double falsePositiveExpected, int elementsNumExpected) {
 		n = elementsNumExpected;
@@ -45,10 +59,10 @@ public class BloomFilter {
 
 	/**
 	 * 对一个byte[]数组进行若干次hash，内部基于{@link BloomFilter#digestFunction}的salt生成摘要方式,
-	 * 每次hash的结果为一个32位的int
+	 * 每次hash的结果为一个32位的int。
 	 *
 	 * @param data
-	 * @param hashes
+	 * @param hashes 哈希次数
 	 * @return
 	 */
 	public static int[] createHashes(byte[] data, int hashes) {
@@ -130,6 +144,9 @@ public class BloomFilter {
 	 * @return 如果e已经存在，返回false；如果e不存在，添加并返回true
 	 */
 	public boolean add(byte[] e) {
+		if (count() >= n) {
+			logger.warn("元素个数已达预期，误判率将高于" + expectedFalsePositiveProbability());
+		}
 		if (contains(e))
 			return false;
 		// 创建k个hash值，每个hash值是一个int

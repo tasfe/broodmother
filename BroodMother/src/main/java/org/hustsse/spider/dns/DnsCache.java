@@ -1,9 +1,26 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.dns;
+
+import org.hustsse.spider.handler.crawl.DnsResolver;
 
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Element;
 
+/**
+ * DNS缓存。
+ *
+ * <p>
+ * 为了避免抓取过程中对DNS服务器造成太大的压力，对DNS记录进行缓存。{@link DnsResolver}
+ * 对某个CrawlURL进行dns解析前必须首先查看缓存中是否已有相应记录。
+ * </p>
+ *
+ * <p>
+ * 基于EnCache实现，默认加载配置文件encache.xml。
+ * </p>
+ *
+ * @author Anderson
+ *
+ */
 public class DnsCache {
 
 	public final static CacheManager cacheManager = new CacheManager();

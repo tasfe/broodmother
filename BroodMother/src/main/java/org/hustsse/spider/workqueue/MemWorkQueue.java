@@ -1,38 +1,36 @@
-package org.hustsse.spider.framework;
+package org.hustsse.spider.workqueue;
 
 import java.util.Queue;
 import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.hustsse.spider.exception.EnqueueFailedException;
 import org.hustsse.spider.exception.OverFlowException;
 import org.hustsse.spider.model.CrawlURL;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
- * workqueue基于内存的实现，based on PriorityQueue
+ * workqueue基于内存的实现，based on j.u.c中的PriorityBlockingQueue
  *
- * @author Administrator
+ * @author Anderson
  *
  */
 public class MemWorkQueue extends AbstractWorkQueue {
-	private static Logger logger = LoggerFactory.getLogger(MemWorkQueue.class);
 
+	/** 内部容器的初始长度 */
 	private static final int DEFAULT_INITIAL_CAPACITY = 1000;
 
-	Queue<CrawlURL> urls;
+	/** 内部容器 */
+	Queue<CrawlURL> urls  = new PriorityBlockingQueue<CrawlURL>(DEFAULT_INITIAL_CAPACITY);
+	/** 元素数目 */
 	protected AtomicLong count = new AtomicLong(0);
 
 	public MemWorkQueue(String key, int maxLength) {
 		super(key,(long)maxLength);
-		urls = new PriorityBlockingQueue<CrawlURL>(DEFAULT_INITIAL_CAPACITY);
 	}
 
 	@Override
-	public void enqueue(CrawlURL u) throws OverFlowException {
-		// 超出最大限制了，discard
+	public void enqueue(CrawlURL u){
+		// 超出最大限制了，抛出异常
 		if (count.intValue() >= maxLength && maxLength > 0) {
 			throw new OverFlowException("MemWorkQueue[" + workQueueKey + "]元素数目已达上限，数量：" + count.intValue() + "，入队失败。");
 		}

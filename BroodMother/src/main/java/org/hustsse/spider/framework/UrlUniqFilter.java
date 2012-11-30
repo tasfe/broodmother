@@ -11,7 +11,7 @@ public interface UrlUniqFilter {
 	 * 添加一个url到“already seen”集合
 	 *
 	 * @param canonicalUrl url的canonical形式
-	 * @return url已经存在，返回true；否则添加并返回false
+	 * @return url已经存在，返回false；否则添加并返回true
 	 */
 	public boolean add(String canonicalUrl);
 

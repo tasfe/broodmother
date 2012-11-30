@@ -1,7 +1,20 @@
 package org.hustsse.spider.handler.crawl.fetcher.nio;
 
-import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants.*;
-import static org.hustsse.spider.model.CrawlURL.*;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants.DEFAULT_CONNECT_TIMEOUT_MILLIS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants.WRITE_SPIN_COUNT;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._CONNECT_ATTEMPT_MILLIS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._CONNECT_DEADLINE_NANOS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._CONNECT_SUCCESS_MILLIS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._LAST_SEND_REQUEST_MILLIS;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._RAW_RESPONSE;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_ALREADY_SEND_SIZE;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_BUFFER;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_SEND_FINISHED;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_SEND_TIMES;
+import static org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants._REQUEST_SIZE;
+import static org.hustsse.spider.model.CrawlURL.FETCH_FAILED;
+import static org.hustsse.spider.model.CrawlURL.FETCH_ING;
+import static org.hustsse.spider.model.CrawlURL.FETCH_SUCCESSED;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -26,7 +39,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hustsse.spider.exception.BossException;
-import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.framework.Pipeline;
 import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
@@ -171,7 +183,7 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 	 */
 	@SuppressWarnings("unchecked")
 	private List<ByteBuffer> appendToSegList(ByteBuffer segment, CrawlURL uriProcessed) {
-		Object val = uriProcessed.getProcessorAttr(_RAW_RESPONSE);
+		Object val = uriProcessed.getHandlerAttr(_RAW_RESPONSE);
 		List<ByteBuffer> responseSegments;
 		if (val == null) {
 			responseSegments = new LinkedList<ByteBuffer>();
@@ -484,7 +496,7 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 			if (writtenBytes != 0) {
 				url.setHandlerAttr(_LAST_SEND_REQUEST_MILLIS, System.currentTimeMillis());
 				url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, writtenBytes);
-				url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer) url.getProcessorAttr(_REQUEST_SEND_TIMES) + 1);
+				url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer) url.getHandlerAttr(_REQUEST_SEND_TIMES) + 1);
 				break;
 			}
 		}
@@ -619,7 +631,7 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 			for (Iterator<SelectionKey> i = keys.iterator(); i.hasNext();) {
 				SelectionKey k = i.next();
 				CrawlURL u = (CrawlURL) k.attachment();
-				Long connectDeadlineNanos = (Long) u.getProcessorAttr(_CONNECT_DEADLINE_NANOS);
+				Long connectDeadlineNanos = (Long) u.getHandlerAttr(_CONNECT_DEADLINE_NANOS);
 				if (connectDeadlineNanos > 0 && currentTimeNanos > connectDeadlineNanos) {
 					int duration = getConAttemptDuration(u);
 					logger.debug("连接服务器超时，距尝试连接时刻(s)：{},url：{},重试次数：{}", new Object[] { duration, u, u.getRetryTimes() });
@@ -631,7 +643,7 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 
 		private int getConAttemptDuration(CrawlURL u) {
 			long now = System.currentTimeMillis();
-			long duration = (now - (Long) (u.getProcessorAttr(_CONNECT_ATTEMPT_MILLIS))) / 1000;
+			long duration = (now - (Long) (u.getHandlerAttr(_CONNECT_ATTEMPT_MILLIS))) / 1000;
 			return (int) duration;
 		}
 

@@ -1,9 +1,10 @@
 package org.hustsse.spider.handler.crawl;
 
+import static org.hustsse.spider.model.CrawlURL.FETCH_FAILED;
+
 import org.apache.commons.lang3.StringUtils;
-import org.hustsse.spider.framework.Dns;
-import org.hustsse.spider.framework.DnsCache;
-import org.hustsse.spider.framework.Handler;
+import org.hustsse.spider.dns.Dns;
+import org.hustsse.spider.dns.DnsCache;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
@@ -16,8 +17,6 @@ import org.xbill.DNS.Lookup;
 import org.xbill.DNS.Record;
 import org.xbill.DNS.TextParseException;
 import org.xbill.DNS.Type;
-
-import static org.hustsse.spider.model.CrawlURL.*;
 
 public class DnsResolver extends AbstractBeanNameAwareHandler {
 	private static Logger logger = LoggerFactory.getLogger(DnsResolver.class);
