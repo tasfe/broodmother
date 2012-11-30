@@ -1,9 +1,12 @@
 package org.hustsse.spider.model;
 
+import java.net.MalformedURLException;
+import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 import org.hustsse.spider.exception.CrawlControllerException;
+import org.hustsse.spider.exception.OverFlowException;
 import org.hustsse.spider.framework.Frontier;
 import org.hustsse.spider.framework.Pipeline;
 import org.slf4j.Logger;
@@ -37,6 +40,8 @@ public class CrawlController implements ApplicationContextAware {
 
 	private int crawlThreadNum;
 
+	private List<String> seeds;
+
 	private CrawlJob crawlJob;
 
 	// -------- consts
@@ -44,12 +49,25 @@ public class CrawlController implements ApplicationContextAware {
 	private static final int DEFAULT_CRAWL_THREAD_NUM = 1;
 
 	public void start() {
+		// load the seeds first
+		try {
+			frontier.loadSeeds(seeds);
+		} catch (MalformedURLException e) {
+			// cannot recover, do nothing but throw a RuntimeException to
+			// fail-fast
+			throw new CrawlControllerException("seed格式不合法！", e);
+		} catch (OverFlowException e) {
+			// too many seeds
+			throw new CrawlControllerException("too many seeds！workqueue overflow!", e);
+		}
+
 		if (crawlThreadPool == null)
 			crawlThreadPool = Executors.newCachedThreadPool();
 		if (crawlThreadNum <= 0)
 			crawlThreadNum = DEFAULT_CRAWL_THREAD_NUM;
 		for (int i = 0; i < crawlThreadNum; i++) {
-			crawlThreadPool.execute(new BossTask(crawlJob, i));
+			Runnable boss = new BossTask(crawlJob, i);
+			crawlThreadPool.execute(boss);
 		}
 	}
 
@@ -67,14 +85,31 @@ public class CrawlController implements ApplicationContextAware {
 			String newThreadName = "crawl thread , " + job.getName() + "#" + index;
 			Thread.currentThread().setName(newThreadName);
 			while (true) {
-				CrawlURL uriToCrawl = frontier.next();
-				if (uriToCrawl == null) {
-					return;
+				CrawlURL uriToCrawl = null;
+				uriToCrawl = frontier.next();
+				if (uriToCrawl != null) {
+					logger.debug("处理URL：" + uriToCrawl.toString());
+					uriToCrawl.getPipeline().start();
 				}
-				logger.debug("处理URL：" + uriToCrawl.toString());
-				uriToCrawl.getPipeline().start();
+
+				// TODO 没有uri，休眠若干次，timeout递增。
+				if (uriToCrawl == null) {
+					try {
+						Thread.sleep(10);
+						continue;
+					} catch (InterruptedException e) {
+					}
+				}
 			}
 		}
+	}
+
+	public List<String> getSeeds() {
+		return seeds;
+	}
+
+	public void setSeeds(List<String> seeds) {
+		this.seeds = seeds;
 	}
 
 	public Executor getCrawlThreadPool() {
@@ -106,14 +141,7 @@ public class CrawlController implements ApplicationContextAware {
 	}
 
 	public Pipeline getPipeline() {
-		// if(pipelineId == null)
-		// throw new CrawlControllerException("没有指定pipeline!");
 		return (Pipeline) appContext.getBean(pipelineBeanId);
-	}
-
-	@Override
-	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-		appContext = applicationContext;
 	}
 
 	public String getPipelineId() {
@@ -123,4 +151,10 @@ public class CrawlController implements ApplicationContextAware {
 	public void setPipelineId(String pipelineId) {
 		this.pipelineBeanId = pipelineId;
 	}
+
+	@Override
+	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+		appContext = applicationContext;
+	}
+
 }

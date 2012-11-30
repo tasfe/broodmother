@@ -1,18 +1,26 @@
 package org.hustsse.spider.handler.crawl.writer;
 
+import java.io.File;
+import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 
 import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
+import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
+import org.hustsse.spider.handler.crawl.fetcher.nio.NioConstants;
 import org.hustsse.spider.model.CrawlURL;
 import org.hustsse.spider.util.CommonUtils;
 
-public class SimpleFileWriter implements Handler {
+public class SimpleFileWriter  extends AbstractBeanNameAwareHandler {
 
 	@Override
 	public void process(HandlerContext ctx, CrawlURL url) {
-		String contentPath = "R:\\" + encodeByMD5(url.getURL().toString()) + ".html";
-//		String contentPath = "R:\\" + url.getURL().toString().replace('1', '1') + ".html";
+		String folder = "R:\\" + url.getWorkQueueKey().replace(':', '_');
+		File f = new File(folder);
+		if(!f.exists()) {
+			f.mkdir();
+		}
+		String contentPath = folder+"\\"+encodeByMD5(url.getURL().toString()) + ".html";
 		CommonUtils.toFile(url.getResponse().getContent(), contentPath,url);
 		ctx.proceed();
 	}

@@ -1,18 +1,41 @@
 package org.hustsse.spider.sink;
 
 import org.hustsse.spider.exception.PipelineException;
+import org.hustsse.spider.framework.Frontier;
 import org.hustsse.spider.framework.PipelineSink;
 import org.hustsse.spider.model.CrawlURL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class DefaultCrawlPipelineSink implements PipelineSink{
 
+	Logger logger  = LoggerFactory.getLogger(DefaultCrawlPipelineSink.class.getName());
+
+	@Autowired
+	Frontier frontier;
+
 	@Override
-	public void uriSunk(CrawlURL e) {
+	public void uriSunk(CrawlURL url) {
 		//TODO 记录时间、重试？
+		if(url.isNeedRetry()) {
+			if(url.getRetryTimes() >= CrawlURL.DEFAULT_RETRY_TIMES) {
+				logger.debug("抓取失败，url：{}",url);
+				return;
+			}
+
+			// retry
+			url.incRetryTimes();
+			try{
+				frontier.schedule(url);
+			}catch(RuntimeException e) {
+				logger.error("schedule failed when retry,url:"+url,e);
+			}
+		}
 	}
 
 	@Override
 	public void exceptionCaught(CrawlURL e, PipelineException cause) {
-
+		logger.error("Unexpected exception:"+e,cause);
 	}
 }

@@ -1,7 +1,7 @@
 package org.hustsse.spider.handler.candidate;
 
-import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
+import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -14,15 +14,15 @@ import org.springframework.beans.factory.annotation.Autowired;
  * @author Administrator
  *
  */
-public class FrontierPreparer implements Handler {
+public class FrontierPreparer  extends AbstractBeanNameAwareHandler {
 
-	@Autowired
+	@Autowired(required=false)
 	QueueAssignmentPolicy queueAssignmentPolicy;
 
-	@Autowired
+	@Autowired(required=false)
 	UrlPriorityPolicy urlPriorityPolicy;
 
-	@Autowired
+	@Autowired(required=false)
 	CanonicalPolicy canonicalPolicy;
 
 	public FrontierPreparer() {
@@ -33,14 +33,24 @@ public class FrontierPreparer implements Handler {
 
 	@Override
 	public void process(HandlerContext ctx, CrawlURL url) {
+		prepare(url);
+		ctx.proceed();
+	}
 
+	/**
+	 * prepare the url before schedule into frontier:
+	 * 1. calculate the workqueue key;
+	 * 2. set priority for it;
+	 * 3. calculate the canonical format string,which will be used by the UriUniqFilter.
+	 *
+	 * @param url
+	 */
+	public void prepare(CrawlURL url) {
 		url.setWorkQueueKey(getWorkQueueKeyFor(url));
 
 		url.setPriority(getPriorityFor(url));
 
 		url.setCanonicalStr(getCanonicalStrFor(url));
-
-		ctx.proceed();
 	}
 
 	private String getCanonicalStrFor(CrawlURL url) {

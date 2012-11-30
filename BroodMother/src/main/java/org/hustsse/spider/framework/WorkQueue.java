@@ -1,5 +1,8 @@
 package org.hustsse.spider.framework;
 
+import org.hustsse.spider.exception.DequeueFailedException;
+import org.hustsse.spider.exception.EnqueueFailedException;
+import org.hustsse.spider.exception.OverFlowException;
 import org.hustsse.spider.model.CrawlURL;
 
 /**
@@ -9,11 +12,21 @@ import org.hustsse.spider.model.CrawlURL;
  */
 public interface WorkQueue {
 
-	void enqueue(CrawlURL u);
+	/**
+	 *
+	 * @param u
+	 * @throws  OverFlowException
+	 * @throws  EnqueueFailedException
+	 */
+	void enqueue(CrawlURL u) throws OverFlowException;
 
 	String getKey();
-	void setKey(String wqKey);
 
+	/**
+	 *
+	 * @return null if empty; non-null if not empty
+	 * @throws DequeueFailedException if failed
+	 */
 	CrawlURL dequeue();
 
 	boolean isEmpty();
@@ -27,4 +40,15 @@ public interface WorkQueue {
 
 	long getPolitenessInterval();
 	void setPolitenessInterval(long politenessInterval);
+
+	long count();
+	long getMaxLength();
+
+	// <=0时,没有限制; <count时依然起作用
+	void setMaxLength(long maxLength);
+
+	// void setDiscardedUrlHandler()   超过max时的处理器
+
+	// diskBased()? close() ? sync()?等与资源相关的方法？类似bufferedouputstream
+
 }

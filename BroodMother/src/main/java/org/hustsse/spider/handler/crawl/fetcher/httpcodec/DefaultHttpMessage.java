@@ -155,12 +155,38 @@ public class DefaultHttpMessage implements HttpMessage {
 		return content.duplicate();
 	}
 
-	static Pattern charsetMetaPattern = Pattern.compile("<\\s*meta.*content\\s*=.*>" + // <meta
-																						// http-equiv="Content-Type"
-																						// content="text/html;charset=gb2312">
-			"|<\\s*meta.*charset\\s*=.*>" // <meta charset="gb2312">
-	, Pattern.CASE_INSENSITIVE);
-	static Pattern charsetAttrPattern = Pattern.compile("charset\\s*=\\s*.+['\"]", Pattern.CASE_INSENSITIVE);
+	public static void main(String[] args) {
+		String contentStr = "<meta content=\"text/html; charset=gb2312\" http-equiv=\"Content-Type\">\n" +
+				"";
+		String contentCharset;
+		Matcher matchMeta = charsetMetaPattern.matcher(contentStr);
+		boolean foundMeta = matchMeta.find();// 只查找一次meta标签
+		if (foundMeta) {
+			String meta = matchMeta.group();
+			// find the "charset" or "content" attr
+			Matcher matchCharset = charsetAttrPattern.matcher(meta);
+			boolean foundCharset = matchCharset.find();
+			if (foundCharset) {
+				// get the charset
+				String charsetAttr = matchCharset.group();
+				String s = charsetAttr.split("=")[1];
+				if (s.startsWith("'") || s.startsWith("\""))
+					s = s.substring(1);
+				if (s.endsWith("'") || s.endsWith("\""))
+					s = s.substring(0, s.length() - 1);
+				contentCharset = s;
+
+				// decode content & return
+				System.out.println(contentCharset);
+			}
+		}
+	}
+
+	// <meta http-equiv="Content-Type" content="text/html;charset=gb2312">
+	// <meta charset="gb2312">
+	static Pattern charsetMetaPattern = Pattern.compile("<\\s*meta[^>]*content\\s*=[^>]*>" + "|<\\s*meta[^>]*charset\\s*=[^>]*>",
+			Pattern.CASE_INSENSITIVE);
+	static Pattern charsetAttrPattern = Pattern.compile("charset\\s*=\\s*[a-zA-Z0-9]+['\"]", Pattern.CASE_INSENSITIVE);
 
 	public String getContentStr() {
 		if (contentStr != null)
@@ -198,7 +224,6 @@ public class DefaultHttpMessage implements HttpMessage {
 					s = s.substring(1);
 				if (s.endsWith("'") || s.endsWith("\""))
 					s = s.substring(0, s.length() - 1);
-				System.out.println(s);
 				this.contentCharset = s;
 
 				// decode content & return

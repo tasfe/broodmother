@@ -2,15 +2,15 @@ package org.hustsse.spider.handler.candidate;
 
 import java.util.List;
 
-import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.framework.Pipeline;
+import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
-public class CandidateHandler implements Handler ,ApplicationContextAware{
+public class CandidateHandler  extends AbstractBeanNameAwareHandler implements ApplicationContextAware{
 	private ApplicationContext appContext;
 
 	/** Pipeline for candidate url. Keep the bean id to use the "prototype" feature */
@@ -29,7 +29,7 @@ public class CandidateHandler implements Handler ,ApplicationContextAware{
 		if(candidates == null)return;
 
 		// error page, clear & return.
-		if(url.getFetchStatus()<200 || url.getFetchStatus() >= 400) {
+		if(url.getResponseStatusCode()<200 || url.getResponseStatusCode() >= 400) {
 			candidates.clear();
 			return;
 		}

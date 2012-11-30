@@ -2,11 +2,11 @@ package org.hustsse.spider.handler.candidate;
 
 import org.hustsse.spider.deciderules.DecideResult;
 import org.hustsse.spider.deciderules.DecideRule;
-import org.hustsse.spider.framework.Handler;
 import org.hustsse.spider.framework.HandlerContext;
+import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
 
-public class CandidateJudge implements Handler {
+public class CandidateJudge  extends AbstractBeanNameAwareHandler {
 
 	private DecideRule rule;
 
@@ -14,7 +14,7 @@ public class CandidateJudge implements Handler {
 	public void process(HandlerContext ctx, CrawlURL url) {
 		// 使用rule判定url通过或拒绝。
 		if(rule.test(url) == DecideResult.PASS) {
-			url.setPassedRules(true);
+			url.setAllowed(true);
 			ctx.proceed();
 		}
 
