@@ -53,16 +53,6 @@ public class DefaultHandlerContext implements HandlerContext {
 	}
 
 	@Override
-	public Object getAttachment() {
-		return attachment;
-	}
-
-	@Override
-	public void setAttachment(Object attachment) {
-		this.attachment = attachment;
-	}
-
-	@Override
 	public Handler getHandler() {
 		return this.handler;
 	}

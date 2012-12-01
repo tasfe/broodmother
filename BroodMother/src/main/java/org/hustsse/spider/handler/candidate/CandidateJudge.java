@@ -6,8 +6,15 @@ import org.hustsse.spider.framework.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.model.CrawlURL;
 
+/**
+ * 判断某个candidate是否需要丢弃。
+ *
+ * @author Anderson
+ *
+ */
 public class CandidateJudge  extends AbstractBeanNameAwareHandler {
 
+	/** the decide rule used */
 	private DecideRule rule;
 
 	@Override
