@@ -1,10 +1,10 @@
 package org.hustsse.spider.dns;
 
-import org.hustsse.spider.handler.crawl.DnsResolver;
-
 import net.sf.ehcache.Cache;
 import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Element;
+
+import org.hustsse.spider.handler.crawl.DnsResolver;
 
 /**
  * DNS缓存。
