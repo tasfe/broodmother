@@ -2,17 +2,24 @@ package org.hustsse.spider.handler.crawl.extractor;
 
 import java.net.MalformedURLException;
 
+import org.hustsse.spider.framework.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.framework.HandlerContext;
-import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpHeaders;
 import org.hustsse.spider.model.CrawlURL;
+import org.hustsse.spider.util.httpcodec.HttpHeaders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ExtractorHttp  extends AbstractBeanNameAwareHandler {
+/**
+ * 从http响应header中抽取链接。目前只抽取Location，处理重定向的情况。重定向时抽取完毕后直接跳入CandidateHandler中，
+ * 不解析http response body和写出。
+ *
+ * @author Anderson
+ *
+ */
+public class ExtractorHttp extends AbstractBeanNameAwareHandler {
 	Logger logger = LoggerFactory.getLogger(ExtractorHttp.class);
 
-	/** candidate handler to jump when broken location header found*/
+	/** candidate handler to jump when broken location header found */
 	String candidateHandlerName;
 
 	@Override

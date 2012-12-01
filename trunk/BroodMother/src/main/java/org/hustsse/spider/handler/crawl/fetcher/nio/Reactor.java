@@ -30,15 +30,21 @@ import org.hustsse.spider.model.CrawlURL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Reactor，监听SocketChannel的read（和write，如果http请求未发送完毕的话）。
+ *
+ * @author Anderson
+ *
+ */
 public class Reactor implements Runnable {
 
 	Logger logger = LoggerFactory.getLogger(Reactor.class);
 
 	private static final int DEFAULT_RECEIVE_BUFFER_SIZE = 30 * 1024;
-	static final int MAX_CONNECT_RETRY_TIMES = 3;
+
 	/**
-	 * 接收网络数据使用的Direct Buffer，每次都会重用这一个。
-	 * 读取到的数据将会被拷贝到一个 Heap ByteBuffer并传递给Pipeline。
+	 * 接收网络数据使用的Direct Buffer，每次都会重用这一个。 读取到的数据将会被拷贝到一个 Heap
+	 * ByteBuffer并传递给Pipeline。
 	 */
 	private ByteBuffer receiveBuffer;
 
@@ -75,7 +81,6 @@ public class Reactor implements Runnable {
 
 	class RegisterTask implements Runnable {
 		SocketChannel channel;
-		int tryConnectTimes;
 		CrawlURL uri;
 
 		public RegisterTask(SocketChannel channel, CrawlURL uri) {
@@ -87,10 +92,10 @@ public class Reactor implements Runnable {
 		public void run() {
 			try {
 				// 如果http请求没有发送完毕，我们还需要监听OP_WRITE状态
-				Boolean requestSendFinished = (Boolean)uri.getHandlerAttr(_REQUEST_SEND_FINISHED);
-				if(Boolean.TRUE.equals(requestSendFinished)) {
+				Boolean requestSendFinished = (Boolean) uri.getHandlerAttr(_REQUEST_SEND_FINISHED);
+				if (Boolean.TRUE.equals(requestSendFinished)) {
 					channel.register(selector, SelectionKey.OP_READ, uri);
-				}else {
+				} else {
 					channel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, uri);
 				}
 			} catch (ClosedChannelException e) {
@@ -111,9 +116,9 @@ public class Reactor implements Runnable {
 						SelectionKey key = iter.next();
 						iter.remove();
 						// 处理Key
-						if(key.isReadable()) {
+						if (key.isReadable()) {
 							processReadableKey(key);
-						}else if(key.isWritable()){
+						} else if (key.isWritable()) {
 							processWritableKey(key);
 						}
 					}
@@ -134,31 +139,31 @@ public class Reactor implements Runnable {
 	}
 
 	private void processWritableKey(SelectionKey key) {
-		CrawlURL url = (CrawlURL)key.attachment();
-		SocketChannel channel = (SocketChannel)key.channel();
-		ByteBuffer buffer = (ByteBuffer)url.getHandlerAttr(_REQUEST_BUFFER);
+		CrawlURL url = (CrawlURL) key.attachment();
+		SocketChannel channel = (SocketChannel) key.channel();
+		ByteBuffer buffer = (ByteBuffer) url.getHandlerAttr(_REQUEST_BUFFER);
 		try {
 			// 发送http请求，若发送完成，取消OP_WRITE。
 			int writtenBytes = 0;
 			for (int i = WRITE_SPIN_COUNT; i > 0; i--) {
 				writtenBytes = channel.write(buffer);
-				//write success
+				// write success
 				if (writtenBytes != 0) {
 					url.setHandlerAttr(_LAST_SEND_REQUEST_MILLIS, System.currentTimeMillis());
-					url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, (Integer)url.getHandlerAttr(_REQUEST_ALREADY_SEND_SIZE) + writtenBytes);
-					url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer)url.getHandlerAttr(_REQUEST_SEND_TIMES) + 1);
+					url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, (Integer) url.getHandlerAttr(_REQUEST_ALREADY_SEND_SIZE) + writtenBytes);
+					url.setHandlerAttr(_REQUEST_SEND_TIMES, (Integer) url.getHandlerAttr(_REQUEST_SEND_TIMES) + 1);
 					break;
 				}
 			}
 			boolean reqSendFinished = !buffer.hasRemaining();
 			url.setHandlerAttr(_REQUEST_SEND_FINISHED, reqSendFinished);
 			url.setHandlerAttr(_REQUEST_SEND_FINISHED_MILLIS, reqSendFinished);
-			if(reqSendFinished) {
+			if (reqSendFinished) {
 				url.removeHandlerAttr(_REQUEST_BUFFER);
 				key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
 			}
 		} catch (IOException e) {
-			logger.error("error send http request ! URL: "+url);
+			logger.error("error send http request ! URL: " + url);
 			cancelAndClose(key);
 			url.setFetchStatus(FETCH_FAILED);
 			url.getPipeline().resume(DefaultPipeline.EMPTY_MSG);
@@ -185,7 +190,8 @@ public class Reactor implements Runnable {
 		int ret = 0;
 		int readBytes = 0;
 		try {
-			while ((ret = channel.read(buffer)) > 0) {	// 在低速网络情况下会抛出：java.io.IOException: 远程主机强迫关闭了一个现有的连接。
+			while ((ret = channel.read(buffer)) > 0) { // 在低速网络情况下会抛出：java.io.IOException:
+														// 远程主机强迫关闭了一个现有的连接。
 				readBytes += ret;
 				if (!buffer.hasRemaining()) {
 					break;
@@ -204,21 +210,21 @@ public class Reactor implements Runnable {
 
 		} catch (IOException e) {
 			Object lastSendTime = uri.getHandlerAttr(_LAST_SEND_REQUEST_MILLIS);
-			Long conTime = (Long)uri.getHandlerAttr(_CONNECT_SUCCESS_MILLIS);
-			Integer sendReqTimes = (Integer)uri.getHandlerAttr(_REQUEST_SEND_TIMES);
-			Integer sendBytes = (Integer)uri.getHandlerAttr(_REQUEST_ALREADY_SEND_SIZE);
-			Integer requestSize = (Integer)uri.getHandlerAttr(_REQUEST_SIZE);
+			Long conTime = (Long) uri.getHandlerAttr(_CONNECT_SUCCESS_MILLIS);
+			Integer sendReqTimes = (Integer) uri.getHandlerAttr(_REQUEST_SEND_TIMES);
+			Integer sendBytes = (Integer) uri.getHandlerAttr(_REQUEST_ALREADY_SEND_SIZE);
+			Integer requestSize = (Integer) uri.getHandlerAttr(_REQUEST_SIZE);
 			long now = System.currentTimeMillis();
 			String debug = "\n";
-			if(lastSendTime != null) {
-				debug += "距上次发送request时间（s）："+((now - (Long)lastSendTime)/1000);
-				debug += "\n一共发送request次数："+ sendReqTimes;
-				debug += "\n一共发送字节："+ sendBytes;
-				debug += "\n请求共有字节："+ requestSize;
-			}else {
-				debug += "未发送过request，距连接成功时间（s）："+((now - conTime)/1000);
+			if (lastSendTime != null) {
+				debug += "距上次发送request时间（s）：" + ((now - (Long) lastSendTime) / 1000);
+				debug += "\n一共发送request次数：" + sendReqTimes;
+				debug += "\n一共发送字节：" + sendBytes;
+				debug += "\n请求共有字节：" + requestSize;
+			} else {
+				debug += "未发送过request，距连接成功时间（s）：" + ((now - conTime) / 1000);
 			}
-			logger.error("error read http response ! URL: "+uri+debug,e);
+			logger.error("error read http response ! URL: " + uri + debug, e);
 			cancelAndClose(key);
 			// TODO 读取响应失败，重试？
 			uri.setFetchStatus(FETCH_FAILED);

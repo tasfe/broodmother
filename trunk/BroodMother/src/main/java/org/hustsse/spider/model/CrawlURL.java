@@ -8,7 +8,7 @@ import java.util.Map;
 
 import org.hustsse.spider.dns.Dns;
 import org.hustsse.spider.framework.Pipeline;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpResponse;
+import org.hustsse.spider.util.httpcodec.HttpResponse;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;

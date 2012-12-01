@@ -20,14 +20,10 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetEncoder;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -39,35 +35,57 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hustsse.spider.exception.BossException;
+import org.hustsse.spider.framework.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.framework.Pipeline;
-import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.DefaultHttpRequest;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.DefaultHttpResponse;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpCodecUtil;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpHeaders;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpMethod;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpRequest;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpResponse;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpResponseStatus;
-import org.hustsse.spider.handler.crawl.fetcher.httpcodec.HttpVersion;
 import org.hustsse.spider.model.CrawlURL;
-import org.hustsse.spider.util.CommonUtils;
-import org.hustsse.spider.util.StringUtil;
+import org.hustsse.spider.util.HttpMessageUtil;
+import org.hustsse.spider.util.httpcodec.DefaultHttpRequest;
+import org.hustsse.spider.util.httpcodec.HttpHeaders;
+import org.hustsse.spider.util.httpcodec.HttpMethod;
+import org.hustsse.spider.util.httpcodec.HttpRequest;
+import org.hustsse.spider.util.httpcodec.HttpResponse;
+import org.hustsse.spider.util.httpcodec.HttpVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class NioFetcher  extends AbstractBeanNameAwareHandler {
+/**
+ * 下载器，用于下载网页，基于JDK的NIO实现，没有用Netty等框架，遵循了Reactor模式，这一点是模仿Netty的。
+ * <p>
+ * <h1>Reactor模式</h1>
+ * 两种角色：Boss和Reactor，Boss负责监听连接的Connect状态，当连接上时将其转移注册到Reactor，后者负责连接的读写。
+ *
+ * <h1>Pipeline pause&resume机制的使用</h1>
+ * 当连接注册到Boss时，NioFetcher会将Pipeline挂起(pause)，NioFetcher将成为断点；
+ * 当Reactor接收到数据后resume
+ * Pipeline，并将数据当做Message传递至Pipeline，Pipeline从上次断点处继续运行，重新进入NioFetcher
+ * ；若CrawlURL并未爬取完 ，NioFetcher保存当前数据片并继续挂起pipeline，等待下次被Reactor
+ * resume；若CrawlURL数据读取完毕，则对所有数据进行合并、解析，并在最后proceed
+ * pipeline，CrawlURL流入下一个handler被处理。
+ *
+ * <p>
+ * TODO：提供OIO/Netty的版本。
+ *
+ * @author Anderson
+ *
+ */
+public class NioFetcher extends AbstractBeanNameAwareHandler {
 	private static final Logger logger = LoggerFactory.getLogger(NioFetcher.class);
-
+	/** 默认Reactor数量，=处理器核数*2 */
 	static final int DEFAULT_REACTOR_NUMS = Runtime.getRuntime().availableProcessors() * 2;
+	/** 默认Boss数量 */
 	static final int DEFAULT_BOSS_NUMS = 1;
 	private Reactor[] reactors;
 	private Boss[] boss;
 	private int curReactorIndex;
 	private int curBossIndex;
 
-	// 对http响应做摘要的算法
+	/** Boss线程池 */
+	@SuppressWarnings("unused")
+	private Executor bossExecutor;
+	/** Reactor线程池 */
+	@SuppressWarnings("unused")
+	private Executor reactorExecutor;
 
 	public NioFetcher(Executor bossExecutor, Executor reactorExecutor) {
 		this(bossExecutor, reactorExecutor, DEFAULT_BOSS_NUMS, DEFAULT_REACTOR_NUMS);
@@ -88,6 +106,9 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 
 	// bossCount暂时不开放，默认为1
 	private NioFetcher(Executor bossExecutor, Executor reactorExecutor, int bossCount, int reactorCount) {
+		this.bossExecutor = bossExecutor;
+		this.reactorExecutor = reactorExecutor;
+
 		reactors = new Reactor[reactorCount];
 		boss = new Boss[bossCount];
 		for (int i = 0; i < reactorCount; i++) {
@@ -101,14 +122,16 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 	@Override
 	public void process(HandlerContext ctx, CrawlURL url) {
 		Object msg = url.getPipeline().getMessage();
-		// 初始
+		// 初始进入NioFetcher，并未注册到Boss或Reactor。
 		if (msg == null) {
 			try {
 				SocketChannel channel = SocketChannel.open();
 				channel.configureBlocking(false);
 
+				// 构造服务器地址，DNS已经在上一级的DnsResolver中被解析
 				SocketAddress reomteAddress = new InetSocketAddress(url.getDns().getIp(), url.getURL().getPort());
-				// 立即connect，成功则注册到Reactor
+
+				// 发起connect请求，若立即connect成功，成功则注册到Reactor
 				if (channel.connect(reomteAddress)) {
 					/*
 					 * 低速网络环境下（10K），在Reactor#processReableKey调用channel.read方法可能抛异常
@@ -123,9 +146,10 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 					ctx.pause();
 					nextReactor().register(channel, url);
 				} else {
+					// 立即connect失败则注册到Boss，监听其OP_CONNECT状态
 					url.setHandlerAttr(_CONNECT_ATTEMPT_MILLIS, System.currentTimeMillis());
-					// 失败则注册到Boss，监听其OP_CONNECT状态
 					long curNano = System.nanoTime();
+					// 设置超时时刻为当前时间+NioConstants.DEFAULT_CONNECT_TIMEOUT_MILLIS
 					url.setHandlerAttr(_CONNECT_DEADLINE_NANOS, curNano + DEFAULT_CONNECT_TIMEOUT_MILLIS * 1000 * 1000L);
 					// pause before register，boss/reactor线程可能在pause之前resume
 					ctx.pause();
@@ -144,26 +168,28 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 		// resumed
 		int fetchStatus = url.getFetchStatus();
 		switch (fetchStatus) {
-		case FETCH_FAILED:
+		case FETCH_FAILED: // 抓取失败，重试并finish pipeline
 			url.setNeedRetry(true);
 			ctx.finish();
 			return;
-		case FETCH_ING:
+		case FETCH_ING: // 抓取未完成，保存数据片并pause pipeline
 			appendToSegList((ByteBuffer) msg, url);
 			url.getPipeline().clearMessage();
 			ctx.pause();
 			return;
-		case FETCH_SUCCESSED:
+		case FETCH_SUCCESSED: // 抓取成功，合并数据片并解析成http响应，proceed pipeline
 			ByteBuffer segment = (ByteBuffer) msg;
 			List<ByteBuffer> responseSegments = appendToSegList(segment, url);
 			ByteBuffer merged = merge(responseSegments);
 			merged.flip(); // *** 设置为写出模式 ***
 
-			// raw http response(ByteBuffer形式，未解析)和解析之后的HttpResponse（但是Content依然是ByteBuffer形式），
-			// are backed by the SAME buffer,be careful to modify them
+			/*
+			 * raw http
+			 * response(ByteBuffer形式，未解析)和解析之后的HttpResponse（但是Content依然是ByteBuffer形式
+			 * ）， are backed by the SAME buffer,be careful to modify them
+			 */
 			url.setHandlerAttr(_RAW_RESPONSE, merged); // 后续processor会用到原始http响应么？不需要的话可以删除之
-			CommonUtils.toFile(merged.duplicate(), "R:\\www_topit_me.html", url);
-			HttpResponse response = decodeHttpResponse(merged.duplicate());
+			HttpResponse response = HttpMessageUtil.decodeHttpResponse(merged.duplicate());
 			url.setResponse(response);
 
 			// TODO 对content生成消息摘要，用于对内容判重
@@ -175,9 +201,11 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 	}
 
 	/**
-	 * 将读到的Http响应片段添加到URI对应的segment list末尾
+	 * 将读到的Http响应片段添加到URI对应的segment list末尾，segment list作为handler attr保存在
+	 * {@link CrawlURL#handlerAttrs}中，key为{@link NioConstants#_RAW_RESPONSE}。
 	 *
 	 * @param segment
+	 *            http响应数据片
 	 * @param uriProcessed
 	 * @return
 	 */
@@ -195,257 +223,14 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 		return responseSegments;
 	}
 
-	protected static enum State {
-		EMPTY_CONTENT, READ_VARIABLE_LENGTH_CONTENT, READ_FIXED_LENGTH_CONTENT,
-	}
-
 	/**
-	 * 解码http响应。
+	 * merge http响应数据片。
 	 *
-	 * <p>
-	 * 如果响应没有正文，返回的结果{@link HttpResponse#getContent()}将返回null。
-	 * 否则将返回一个已经flip为写出模式的ByteBuffer对象。
+	 * TODO:Netty的CompositeChannelBuffer性能更好。
 	 *
-	 * @param merged
+	 * @param buffers
 	 * @return
 	 */
-	private HttpResponse decodeHttpResponse(ByteBuffer merged) {
-		// response 第一行
-		String firstline = readLine(merged);
-		String[] splitedInitialLine = splitInitialLine(firstline);
-		if (!firstline.toLowerCase().startsWith("http"))
-			System.out.println("=============" + firstline);
-		HttpResponse r = new DefaultHttpResponse(HttpVersion.valueOf(splitedInitialLine[0]), new HttpResponseStatus(
-				Integer.valueOf(splitedInitialLine[1]), splitedInitialLine[2]));
-		// headers
-		State nextStep = readHeaders(r, merged);
-		// contents
-		switch (nextStep) {
-		case EMPTY_CONTENT:
-			// No content is expected.
-			// Remove the headers which are not supposed to be present not
-			// to confuse subsequent handlers.
-			r.removeHeader(HttpHeaders.Names.TRANSFER_ENCODING);
-			break;
-		case READ_FIXED_LENGTH_CONTENT:
-			// we have a content-length so we just read the correct number of
-			// bytes
-			readFixedLengthContent(merged, r);
-			break;
-		case READ_VARIABLE_LENGTH_CONTENT:
-			readVariableLengthContent(merged, r);
-			break;
-		default:
-		}
-		return r;
-	}
-
-	private void readVariableLengthContent(ByteBuffer merged, HttpResponse r) {
-		ByteBuffer content = merged.slice();
-		r.setContent(content);
-	}
-
-	private void readFixedLengthContent(ByteBuffer buffer, HttpResponse message) {
-		long length = HttpHeaders.getContentLength(message, -1);
-		assert length <= Integer.MAX_VALUE;
-		int contentEndPostion = buffer.position() + (int) length;
-		// 读取完毕，但内容不全 TODO 这么处理合适么？
-		if(contentEndPostion > buffer.capacity()) {
-			readVariableLengthContent(buffer, message);
-			return;
-		}
-
-		// 为了防止拷贝，response的content与merged底层使用同一个数据结构，merged
-		// = 响应头 + headers
-		// +正文，前两者的内容不会太多，
-		buffer.limit(contentEndPostion);
-		ByteBuffer content = buffer.slice();
-		message.setContent(content);
-	}
-
-	/**
-	 * 根据响应的status code判断是否有content
-	 *
-	 * @param msg
-	 * @return
-	 */
-	protected boolean isContentAlwaysEmpty(HttpResponse msg) {
-		HttpResponse res = (HttpResponse) msg;
-		int code = res.getStatus().getCode();
-		if (code < 200) {
-			return true;
-		}
-		switch (code) {
-		case 204:
-		case 205:
-		case 304:
-			return true;
-		}
-		return false;
-	}
-
-	private String readLine(ByteBuffer buffer) {
-		StringBuilder sb = new StringBuilder(64);
-		while (true) {
-			byte nextByte = buffer.get();
-			if (nextByte == HttpCodecUtil.CR) {
-				nextByte = buffer.get();
-				if (nextByte == HttpCodecUtil.LF) {
-					return sb.toString();
-				}
-			} else if (nextByte == HttpCodecUtil.LF) {
-				return sb.toString();
-			} else {
-				sb.append((char) nextByte);
-			}
-		}
-	}
-
-	private String[] splitInitialLine(String sb) {
-		int aStart;
-		int aEnd;
-		int bStart;
-		int bEnd;
-		int cStart;
-		int cEnd;
-
-		aStart = findNonWhitespace(sb, 0);
-		aEnd = findWhitespace(sb, aStart);
-
-		bStart = findNonWhitespace(sb, aEnd);
-		bEnd = findWhitespace(sb, bStart);
-
-		cStart = findNonWhitespace(sb, bEnd);
-		cEnd = findEndOfString(sb);
-
-		return new String[] { sb.substring(aStart, aEnd), sb.substring(bStart, bEnd), cStart < cEnd ? sb.substring(cStart, cEnd) : "" };
-	}
-
-	private int findNonWhitespace(String sb, int offset) {
-		int result;
-		for (result = offset; result < sb.length(); result++) {
-			if (!Character.isWhitespace(sb.charAt(result))) {
-				break;
-			}
-		}
-		return result;
-	}
-
-	private int findWhitespace(String sb, int offset) {
-		int result;
-		for (result = offset; result < sb.length(); result++) {
-			if (Character.isWhitespace(sb.charAt(result))) {
-				break;
-			}
-		}
-		return result;
-	}
-
-	private int findEndOfString(String sb) {
-		int result;
-		for (result = sb.length(); result > 0; result--) {
-			if (!Character.isWhitespace(sb.charAt(result - 1))) {
-				break;
-			}
-		}
-		return result;
-	}
-
-	private State readHeaders(HttpResponse message, ByteBuffer buffer) {
-		String line = readHeader(buffer);
-		String name = null;
-		String value = null;
-		if (line.length() != 0) {
-			message.clearHeaders();
-			do {
-				char firstChar = line.charAt(0);
-				if (name != null && (firstChar == ' ' || firstChar == '\t')) {
-					value = value + ' ' + line.trim();
-				} else {
-					if (name != null) {
-						message.addHeader(name, value);
-					}
-					String[] header = splitHeader(line);
-					name = header[0];
-					value = header[1];
-				}
-
-				line = readHeader(buffer);
-			} while (line.length() != 0);
-
-			// Add the last header.
-			if (name != null) {
-				message.addHeader(name, value);
-			}
-		}
-
-		State nextStep;
-		// 判断状态，决定下一步要怎么解析
-
-		// 采用的协议是http1.0，因此不考虑chunked情况
-		if (isContentAlwaysEmpty(message)) {
-			nextStep = State.EMPTY_CONTENT;
-		} else if (HttpHeaders.getContentLength(message, -1) >= 0) {
-			nextStep = State.READ_FIXED_LENGTH_CONTENT;
-		} else {
-			nextStep = State.READ_VARIABLE_LENGTH_CONTENT;
-		}
-		return nextStep;
-	}
-
-	private String readHeader(ByteBuffer buffer) {
-		StringBuilder sb = new StringBuilder(64);
-		loop: for (;;) {
-			char nextByte = (char) buffer.get();
-
-			switch (nextByte) {
-			case HttpCodecUtil.CR:
-				nextByte = (char) buffer.get();
-				if (nextByte == HttpCodecUtil.LF) {
-					break loop;
-				}
-				break;
-			case HttpCodecUtil.LF:
-				break loop;
-			}
-			sb.append(nextByte);
-		}
-
-		return sb.toString();
-	}
-
-	private String[] splitHeader(String sb) {
-		final int length = sb.length();
-		int nameStart;
-		int nameEnd;
-		int colonEnd;
-		int valueStart;
-		int valueEnd;
-
-		nameStart = findNonWhitespace(sb, 0);
-		for (nameEnd = nameStart; nameEnd < length; nameEnd++) {
-			char ch = sb.charAt(nameEnd);
-			if (ch == ':' || Character.isWhitespace(ch)) {
-				break;
-			}
-		}
-
-		for (colonEnd = nameEnd; colonEnd < length; colonEnd++) {
-			if (sb.charAt(colonEnd) == ':') {
-				colonEnd++;
-				break;
-			}
-		}
-
-		valueStart = findNonWhitespace(sb, colonEnd);
-		if (valueStart == length) {
-			return new String[] { sb.substring(nameStart, nameEnd), "" };
-		}
-
-		valueEnd = findEndOfString(sb);
-		return new String[] { sb.substring(nameStart, nameEnd), sb.substring(valueStart, valueEnd) };
-	}
-
 	private ByteBuffer merge(List<ByteBuffer> buffers) {
 		int size = 0;
 		for (ByteBuffer buffer : buffers) {
@@ -460,7 +245,7 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 	}
 
 	/**
-	 * 组装http请求并发送
+	 * 组装并发送http请求。
 	 *
 	 * @param channel
 	 * @param url
@@ -485,11 +270,14 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 		httpRequest.setHeader(HttpHeaders.Names.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1; rv:16.0) Gecko/20100101 Firefox/16.0");
 		httpRequest.setHeader(HttpHeaders.Names.ACCEPT, "text/*");
 
-		ByteBuffer reqBuffer = encodeHttpRequest(httpRequest);
+		ByteBuffer reqBuffer = HttpMessageUtil.encodeHttpRequest(httpRequest);
 		// 一些统计信息
 		url.setHandlerAttr(_REQUEST_SIZE, reqBuffer.capacity());
 		url.setHandlerAttr(_REQUEST_ALREADY_SEND_SIZE, 0);
 		url.setHandlerAttr(_REQUEST_SEND_TIMES, 0);
+
+		// 发送http request
+		// 为了防止在网络高负载情况下无法写入Socket内核缓冲区（几乎不会发生，毕竟http请求一般很小），自旋若干次。
 		int writtenBytes = 0;
 		for (int i = WRITE_SPIN_COUNT; i > 0; i--) {
 			writtenBytes = channel.write(reqBuffer);
@@ -503,55 +291,24 @@ public class NioFetcher  extends AbstractBeanNameAwareHandler {
 		// 99%的情况都会一次性发送完毕，不会注册到reactor上，但是以防万一还是做点处理。
 		boolean reqSendFinished = !reqBuffer.hasRemaining();
 		url.setHandlerAttr(_REQUEST_SEND_FINISHED, reqSendFinished);
+		// save the request buffer for next sending
 		if (!reqSendFinished) {
-			url.setHandlerAttr(_REQUEST_BUFFER, reqBuffer); // save the
-																// request
-																// buffer for
-																// next sending
+			url.setHandlerAttr(_REQUEST_BUFFER, reqBuffer);
 		}
 	}
 
 	/**
-	 * 编码Http请求。
-	 *
-	 * <p>
-	 * 注意HTTP message是个文本协议，除了正文的字符集是在Header中指定，其他都是用US-ASCII字符集进行传输的，
-	 * 注意区分charset和encoding的区别。
-	 * <p>
-	 * Http message中的“CRLF”，是ASCII字符集中的两个字符，分别对应“Carriage Return(回车)”和“Line Feed
-	 * (换行)”，这二者的含义不同，具体见{@link HttpCodecUtil#CR}和{@link HttpCodecUtil#LF}
-	 * <p>
-	 * 各个平台上显示或者保存文本时的line seperator用什么字符是平台相关的，比如Unix系统里，每行结尾只有“换行”，即“\n”；
-	 * Windows系统里，每行结尾是“回车换行”，即“\r\n”；Mac系统里，每行结尾是“回车”，即"\r"。 <br>
-	 * 可以用如下方式得到平台相关的line seperator:
-	 *
-	 * <pre>
-	 * <code>
-	 *   newLine = new Formatter().format("%n").toString()
-	 * </code>
-	 * </pre>
-	 *
-	 * <h2>URL的encoding</h2>
-	 * <p>
-	 * URL最终作为Http请求行被发送时，由于发送时采用ASCII字符集，如何处理如中文这种字符？答案是使用一个ASCII的超集对其
-	 * 进行“百分号Encoding”，标准推荐使用UTF-8。当用户在浏览器中输入url时，会使用浏览器默认字符集对其encoding。
-	 *
-	 * @param request
+	 * 获取下一个使用的Boss，round-robbin方式使用所有boss
 	 * @return
-	 * @see StringUtil#NEWLINE
-	 * @throws CharacterCodingException
 	 */
-	private ByteBuffer encodeHttpRequest(HttpRequest request) throws CharacterCodingException {
-		Charset charset = Charset.forName("ASCII"); // HTTP协议使用ASCII字符集进行传输
-		CharsetEncoder encoder = charset.newEncoder();
-		String requestStr = request.toRequestStr();
-		return encoder.encode(CharBuffer.wrap(requestStr));
-	}
-
 	public Boss nextBoss() {
 		return boss[curBossIndex++ % boss.length];
 	}
 
+	/**
+	 * 获取下一个使用的Reactor，round-robbin方式使用所有reactor
+	 * @return
+	 */
 	public Reactor nextReactor() {
 		return reactors[curReactorIndex++ % reactors.length];
 	}

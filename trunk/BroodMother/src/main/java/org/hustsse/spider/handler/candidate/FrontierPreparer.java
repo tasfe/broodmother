@@ -1,7 +1,7 @@
 package org.hustsse.spider.handler.candidate;
 
+import org.hustsse.spider.framework.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.framework.HandlerContext;
-import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
 import org.springframework.beans.factory.annotation.Autowired;
 
