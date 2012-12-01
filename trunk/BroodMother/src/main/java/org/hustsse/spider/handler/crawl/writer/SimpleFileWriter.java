@@ -23,13 +23,14 @@ public class SimpleFileWriter extends AbstractBeanNameAwareHandler {
 	@Override
 	public void process(HandlerContext ctx, CrawlURL url) {
 		File jobDir = ctx.getController().getCrawlJob().getJobDir();
-		String folder = jobDir.getAbsolutePath() + File.pathSeparator + PAGE_REPO + File.pathSeparator
-				+ url.getWorkQueueKey().replace(':', '_');
-		File f = new File(folder);
-		if (!f.exists()) {
-			f.mkdir();
+		File pageDir =  new File(jobDir.getAbsolutePath() + File.separator + PAGE_REPO) ;
+		if(!pageDir.exists())
+			pageDir.mkdir();
+		File hostDir = new File(pageDir.getAbsoluteFile() + File.separator + url.getWorkQueueKey().replace(':', '_'));
+		if (!hostDir.exists()) {
+			hostDir.mkdir();
 		}
-		String contentPath = folder + File.pathSeparator + encodeByMD5(url.getURL().toString()) + ".html";
+		String contentPath = hostDir.getAbsolutePath() + File.separator + encodeByMD5(url.getURL().toString()) + ".html";
 		CommonUtils.toFile(url.getResponse().getContent(), contentPath, url);
 		ctx.proceed();
 	}
