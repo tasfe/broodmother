@@ -24,8 +24,9 @@ import org.springframework.context.ApplicationContextAware;
  */
 public class CrawlController implements ApplicationContextAware {
 	private static Logger logger = LoggerFactory.getLogger(CrawlController.class);
+	/** 使用的Spring容器。CrawlController利用Spring管理和组装各个子部件。 */
 	ApplicationContext appContext;
-	// url manager
+	/** url manager */
 	@Autowired
 	private Frontier frontier;
 
@@ -36,18 +37,35 @@ public class CrawlController implements ApplicationContextAware {
 	 */
 	private String pipelineBeanId;
 
+	/** Crawl线程使用的线程池 */
 	private Executor crawlThreadPool;
 
+	/** Crawl线程个数 */
 	private int crawlThreadNum;
 
+	/** 种子 */
 	private List<String> seeds;
 
+	/** 对应的抓取任务 */
 	private CrawlJob crawlJob;
 
 	// -------- consts
 	private static final long DEFAULT_CRAWL_THREAD_TIMEOUT = 30L;
+
+	/** 默认的Crawl线程数 */
 	private static final int DEFAULT_CRAWL_THREAD_NUM = 1;
 
+	/**
+	 * 启动任务，开始抓取。
+	 * <p>
+	 * 1. 加载种子
+	 * <p>
+	 * 2. 提交{@link #crawlThreadNum}个{@link CrawlTask}到{@link #crawlThreadPool}
+	 * 执行。
+	 *
+	 * @throws CrawlControllerException
+	 *             加载种子失败时
+	 */
 	public void start() {
 		// load the seeds first
 		try {
@@ -66,16 +84,23 @@ public class CrawlController implements ApplicationContextAware {
 		if (crawlThreadNum <= 0)
 			crawlThreadNum = DEFAULT_CRAWL_THREAD_NUM;
 		for (int i = 0; i < crawlThreadNum; i++) {
-			Runnable boss = new BossTask(crawlJob, i);
-			crawlThreadPool.execute(boss);
+			Runnable crawlTask = new CrawlTask(crawlJob, i);
+			crawlThreadPool.execute(crawlTask);
 		}
 	}
 
-	class BossTask implements Runnable {
+	/**
+	 * 抓取线程，不停地从Frontier取CrawlURL，开启它的Pipeline执行。
+	 *
+	 * TODO：拿不到时怎么办？sleep若干次并时间递增，还是拿不到则推出？
+	 * @author Anderson
+	 *
+	 */
+	class CrawlTask implements Runnable {
 		int index;
 		CrawlJob job;
 
-		BossTask(CrawlJob crawlJob, int index) {
+		CrawlTask(CrawlJob crawlJob, int index) {
 			job = crawlJob;
 			this.index = index;
 		}
@@ -92,7 +117,6 @@ public class CrawlController implements ApplicationContextAware {
 					uriToCrawl.getPipeline().start();
 				}
 
-				// TODO 没有uri，休眠若干次，timeout递增。
 				if (uriToCrawl == null) {
 					try {
 						Thread.sleep(10);

@@ -4,7 +4,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.hustsse.spider.exception.PipelineException;
+import org.hustsse.spider.model.CrawlController;
 import org.hustsse.spider.model.CrawlURL;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class DefaultPipeline implements Pipeline {
 	/** the url that pipeline attach to*/
@@ -16,6 +18,9 @@ public class DefaultPipeline implements Pipeline {
 	private Map<String, HandlerContext> ctxs = new HashMap<String, HandlerContext>(10);
 	private Object resumeMsg;
 	private boolean isPaused = false;
+
+	@Autowired
+	private CrawlController crawlController;
 
 	@Override
 	public void start() {
@@ -137,5 +142,13 @@ public class DefaultPipeline implements Pipeline {
 	@Override
 	public HandlerContext getHandlerContext(String handlerName) {
 		return ctxs.get(handlerName);
+	}
+
+	public CrawlController getCrawlController() {
+		return crawlController;
+	}
+
+	public void setCrawlController(CrawlController crawlController) {
+		this.crawlController = crawlController;
 	}
 }

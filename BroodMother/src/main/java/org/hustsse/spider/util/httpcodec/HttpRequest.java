@@ -13,35 +13,52 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package org.hustsse.spider.handler.crawl.fetcher.httpcodec;
+package org.hustsse.spider.util.httpcodec;
 
 
 /**
- * An HTTP response.
+ * An HTTP request.
  *
- * <h3>Accessing Cookie</h3>
+ * <h3>Accessing Query Parameters and Cookie</h3>
  * <p>
- * Unlike the Servlet API, {@link Cookie} support is provided separately via
- * {@link CookieEncoder} and {@link CookieDecoder}.
+ * Unlike the Servlet API, a query string is constructed and decomposed by
+ * {@link QueryStringEncoder} and {@link QueryStringDecoder}.  {@link Cookie}
+ * support is also provided separately via {@link CookieEncoder} and
+ * {@link CookieDecoder}.
  *
  * @author <a href="http://www.jboss.org/netty/">The Netty Project</a>
  * @author Andy Taylor (andy.taylor@jboss.org)
- * @author <a href="http://gleamynode.net/">Trustin Lee</a>
  * @version $Rev: 2080 $, $Date: 2010-01-26 18:04:19 +0900 (Tue, 26 Jan 2010) $
  *
- * @see HttpRequest
+ * @see HttpResponse
  * @see CookieEncoder
  * @see CookieDecoder
  */
-public interface HttpResponse extends HttpMessage {
+public interface HttpRequest extends HttpMessage {
 
     /**
-     * Returns the status of this response.
+     * Returns the method of this request.
      */
-    HttpResponseStatus getStatus();
+    HttpMethod getMethod();
 
     /**
-     * Sets the status of this response.
+     * Sets the method of this request.
      */
-    void setStatus(HttpResponseStatus status);
+    void setMethod(HttpMethod method);
+
+    /**
+     * Returns the URI (or path) of this request.
+     */
+    String getUri();
+
+    /**
+     * Sets the URI (or path) of this request.
+     */
+    void setUri(String uri);
+
+    /**
+     * 返回Http请求字符串，格式严格遵守HTTP协议
+     * @return
+     */
+    String toRequestStr();
 }

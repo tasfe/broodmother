@@ -1,5 +1,7 @@
 package org.hustsse.spider.framework;
 
+import org.hustsse.spider.model.CrawlController;
+
 
 public interface HandlerContext {
 
@@ -21,5 +23,7 @@ public interface HandlerContext {
 	Handler getHandler();
 
 	void jumpTo(String handlerName);
+
+	CrawlController getController();
 
 }

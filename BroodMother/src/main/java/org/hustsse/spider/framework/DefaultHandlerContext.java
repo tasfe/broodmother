@@ -1,6 +1,7 @@
 package org.hustsse.spider.framework;
 
 import org.hustsse.spider.exception.PipelineException;
+import org.hustsse.spider.model.CrawlController;
 import org.hustsse.spider.model.CrawlURL;
 
 public class DefaultHandlerContext implements HandlerContext {
@@ -86,5 +87,10 @@ public class DefaultHandlerContext implements HandlerContext {
 		}catch(RuntimeException e) {
 			toSink(pipeline.getURL(),new PipelineException(e));
 		}
+	}
+
+	@Override
+	public CrawlController getController() {
+		return pipeline.getCrawlController();
 	}
 }

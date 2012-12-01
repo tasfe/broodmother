@@ -3,27 +3,38 @@ package org.hustsse.spider.handler.crawl.writer;
 import java.io.File;
 import java.security.MessageDigest;
 
+import org.hustsse.spider.framework.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.framework.HandlerContext;
-import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
 import org.hustsse.spider.util.CommonUtils;
 
-public class SimpleFileWriter  extends AbstractBeanNameAwareHandler {
+/**
+ * 简单的文件写出handler，将抓取到的页面输出到"job根目录/{@link #PAGE_REPO}
+ * "下，每个WorkQueue一个目录，目录名为WorkQueue的key。
+ * <p>
+ * <b>注意：</b>没有做过优化，仅供演示用，大数据量下小心硬盘！
+ *
+ * @author Anderson
+ *
+ */
+public class SimpleFileWriter extends AbstractBeanNameAwareHandler {
+	private static final String PAGE_REPO = "pages";
 
 	@Override
 	public void process(HandlerContext ctx, CrawlURL url) {
-		String folder = "R:\\" + url.getWorkQueueKey().replace(':', '_');
+		File jobDir = ctx.getController().getCrawlJob().getJobDir();
+		String folder = jobDir.getAbsolutePath() + File.pathSeparator + PAGE_REPO + File.pathSeparator
+				+ url.getWorkQueueKey().replace(':', '_');
 		File f = new File(folder);
-		if(!f.exists()) {
+		if (!f.exists()) {
 			f.mkdir();
 		}
-		String contentPath = folder+"\\"+encodeByMD5(url.getURL().toString()) + ".html";
-		CommonUtils.toFile(url.getResponse().getContent(), contentPath,url);
+		String contentPath = folder + File.pathSeparator + encodeByMD5(url.getURL().toString()) + ".html";
+		CommonUtils.toFile(url.getResponse().getContent(), contentPath, url);
 		ctx.proceed();
 	}
 
 	private static final String ALGORITHM = "MD5";
-
 	private static final char[] HEX_DIGITS = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
 
 	/**
