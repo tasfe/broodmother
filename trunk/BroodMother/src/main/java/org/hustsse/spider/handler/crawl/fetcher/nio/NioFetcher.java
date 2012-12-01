@@ -35,9 +35,9 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hustsse.spider.exception.BossException;
-import org.hustsse.spider.framework.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.framework.HandlerContext;
 import org.hustsse.spider.framework.Pipeline;
+import org.hustsse.spider.handler.AbstractBeanNameAwareHandler;
 import org.hustsse.spider.model.CrawlURL;
 import org.hustsse.spider.util.HttpMessageUtil;
 import org.hustsse.spider.util.httpcodec.DefaultHttpRequest;
