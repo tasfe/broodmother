@@ -64,7 +64,7 @@ import org.slf4j.LoggerFactory;
  * pipeline，CrawlURL流入下一个handler被处理。
  *
  * <p>
- * TODO：提供OIO/Netty的版本。
+ * TODO：提供OIO/Netty/httpclient的版本。
  *
  * @author Anderson
  *

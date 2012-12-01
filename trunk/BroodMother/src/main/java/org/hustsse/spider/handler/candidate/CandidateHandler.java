@@ -10,15 +10,27 @@ import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
-public class CandidateHandler  extends AbstractBeanNameAwareHandler implements ApplicationContextAware{
+/**
+ * CrawlURL抽取链接完毕后，使用CandidateHandler对所有candidate
+ * url进行处理。CandidateHandler为每个Candidate创建一个Pipeline并启动之，我们称之为“Candidate
+ * Pipeline”。
+ *
+ * @author Anderson
+ *
+ */
+public class CandidateHandler extends AbstractBeanNameAwareHandler implements ApplicationContextAware {
 	private ApplicationContext appContext;
 
-	/** Pipeline for candidate url. Keep the bean id to use the "prototype" feature */
+	/**
+	 * Pipeline for candidate url. Keep the bean id to use the "prototype"
+	 * feature。
+	 */
 	private String candidatePipelineBeanId;
 
 	public String getCandidatePipelineBeanId() {
 		return candidatePipelineBeanId;
 	}
+
 	public void setCandidatePipelineBeanId(String candidatePipelineBeanId) {
 		this.candidatePipelineBeanId = candidatePipelineBeanId;
 	}
@@ -26,10 +38,11 @@ public class CandidateHandler  extends AbstractBeanNameAwareHandler implements A
 	@Override
 	public void process(HandlerContext ctx, CrawlURL url) {
 		List<CrawlURL> candidates = url.getCandidates();
-		if(candidates == null)return;
+		if (candidates == null)
+			return;
 
 		// error page, clear & return.
-		if(url.getResponseStatusCode()<200 || url.getResponseStatusCode() >= 400) {
+		if (url.getResponseStatusCode() < 200 || url.getResponseStatusCode() >= 400) {
 			candidates.clear();
 			return;
 		}
@@ -46,8 +59,9 @@ public class CandidateHandler  extends AbstractBeanNameAwareHandler implements A
 	}
 
 	private Pipeline getCandidatePipeline() {
-		return (Pipeline)appContext.getBean(candidatePipelineBeanId);
+		return (Pipeline) appContext.getBean(candidatePipelineBeanId);
 	}
+
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
 		this.appContext = applicationContext;
