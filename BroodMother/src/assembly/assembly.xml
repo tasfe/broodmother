@@ -19,7 +19,12 @@
 			<fileMode>0755</fileMode>
 			<lineEnding>keep</lineEnding>
 		</fileSet>
-		
+		<fileSet>
+			<directory>src/assembly/jobs</directory>
+			<outputDirectory>jobs</outputDirectory>
+			<fileMode>0755</fileMode>
+			<lineEnding>keep</lineEnding>
+		</fileSet>
 	</fileSets>
 	<dependencySets>
 		<dependencySet>
