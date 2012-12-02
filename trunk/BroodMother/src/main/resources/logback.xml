@@ -27,7 +27,7 @@
 		</filter>
 	</appender>
 
-	<appender name="NioLogger" class="ch.qos.logback.core.FileAppender">
+	<appender name="FetcherLogger" class="ch.qos.logback.core.FileAppender">
 		<Append>false</Append>
 		<file>Nio.log</file>
 		<encoder>
@@ -39,9 +39,9 @@
 		</filter>
 	</appender>
 
-	<appender name="MemWorkQueueLogger" class="ch.qos.logback.core.FileAppender">
+	<appender name="WorkQueueLogger" class="ch.qos.logback.core.FileAppender">
 		<Append>false</Append>
-		<file>MemWorkQueue.log</file>
+		<file>WorkQueue.log</file>
 		<encoder>
 			<pattern>[%-5level] %date{yyyy-MM-dd HH:mm:ss} %logger \(%file:%line\) - %message%n</pattern>
 		</encoder>
@@ -67,19 +67,20 @@
 		<appender-ref ref="FrontierLogger" />
 	</logger>
 
-	<logger name="org.hustsse.spider.handler.crawl.fetcher.nio" level="DEBUG" additivity="false">
-		<appender-ref ref="NioLogger" />
+	<logger name="org.hustsse.spider.handler.crawl.fetcher" level="DEBUG" additivity="false">
+		<appender-ref ref="FetcherLogger" />
 	</logger>
 
-	<logger name="org.hustsse.spider.framework.MemWorkQueue" level="DEBUG" additivity="false">
-		<appender-ref ref="MemWorkQueueLogger" />
+	<logger name="org.hustsse.spider.WorkQueue" level="DEBUG" additivity="false">
+		<appender-ref ref="WorkQueueLogger" />
 	</logger>
 
-	<logger name="org.hustsse.spider.sink.DefaultCrawlPipelineSink" level="DEBUG" additivity="false">
+	<logger name="org.hustsse.spider.sink" level="DEBUG" additivity="false">
 		<appender-ref ref="SinkLogger" />
 	</logger>
 
 	<root level="DEBUG">
+		<appender-ref ref="AllLogger" />
 		<appender-ref ref="StdoutLogger" />
 	</root>
 </configuration>
