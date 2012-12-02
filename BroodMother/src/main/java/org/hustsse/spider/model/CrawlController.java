@@ -120,9 +120,9 @@ public class CrawlController implements ApplicationContextAware {
 				if (uriToCrawl == null) {
 					try {
 						Thread.sleep(10);
-						continue;
 					} catch (InterruptedException e) {
 					}
+					continue;
 				}
 			}
 		}
