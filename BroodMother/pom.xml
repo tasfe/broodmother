@@ -108,8 +108,8 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>org.hust.sse.Spider</mainClass>
-              <packageName>org.hust.sse</packageName>
+              <mainClass>org.hustsse.spider.framework.JobScanner</mainClass>
+              <packageName>org.hustsse.spider.framework</packageName>
               <addClasspath>true</addClasspath>
               <addExtensions />
             </manifest>
