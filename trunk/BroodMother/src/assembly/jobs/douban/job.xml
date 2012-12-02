@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- HERITRIX 3 CRAWL JOB CONFIGURATION FILE This is a relatively minimal
+	configuration suitable for many crawls. Commented-out beans and properties
+	are provided as an example; values shown in comments reflect the actual defaults
+	which are in effect if not otherwise specified specification. (To change
+	from the default behavior, uncomment AND alter the shown values.) -->
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:aop="http://www.springframework.org/schema/aop" xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+           http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd
+           http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-3.0.xsd
+           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.0.xsd">
+
+	<context:annotation-config />
+
+
+	<!-- Handler配置 -->
+	<bean id="crawlUrlSink" class="org.hustsse.spider.sink.DefaultCrawlPipelineSink" />
+
+	<bean id="simpleWriter"
+		class="org.hustsse.spider.handler.crawl.writer.SimpleFileWriter" />
+
+	<!-- DNS cache / DNS resolver-->
+	<bean id="dnsCache"		class="org.hustsse.spider.dns.DnsCache">
+		<constructor-arg value="dnsCache" />
+	</bean>
+	<bean id="dnsResolver" class="org.hustsse.spider.handler.crawl.DnsResolver" />
+
+	<bean id="nioFetcher" class="org.hustsse.spider.handler.crawl.fetcher.nio.NioFetcher">
+    <!--<constructor-arg value="20" />-->
+	</bean>
+
+<bean id="extractorHttp" class="org.hustsse.spider.handler.crawl.extractor.ExtractorHttp" >
+	<property name="candidateHandlerName" value="candidateHandler"/>
+</bean>
+
+	<bean id="extractorHTML"
+		class="org.hustsse.spider.handler.crawl.extractor.ExtractorHTML" />
+
+	<bean id="candidateHandler" class="org.hustsse.spider.handler.candidate.CandidateHandler">
+		<property name="candidatePipelineBeanId" value="candidatePipeline"/>
+	</bean>
+
+	<!-- candidate Pipeline -->
+	<bean id="candidatePipeline" class="org.hustsse.spider.framework.DefaultPipeline" scope="prototype">
+		<constructor-arg>
+			<ref bean="candidateSink" />
+		</constructor-arg>
+
+		<constructor-arg>
+			<list>
+				<ref bean="candidateJudge" />
+				<ref bean="frontierPreparer" />
+			</list>
+		</constructor-arg>
+	</bean>
+
+	<bean id="candidateSink" class="org.hustsse.spider.sink.DefaultCandidatePipelineSink"/>
+
+	<bean id="discardHttpsRule" class="org.hustsse.spider.deciderules.DiscardHttpsRule"/>
+	<bean id="ruleSequence" class="org.hustsse.spider.deciderules.DecideRuleSequence">
+		<property name="rules">
+			<list>
+				<ref bean="discardHttpsRule"/>
+			</list>
+		</property>
+	</bean>
+	<bean id="candidateJudge" class="org.hustsse.spider.handler.candidate.CandidateJudge">
+		<property name="rule" ref="ruleSequence"/>
+	</bean>
+
+	<!-- canonical policy/url precedence policy/queue assgin policy : use default! -->
+	<bean id="frontierPreparer" class="org.hustsse.spider.handler.candidate.FrontierPreparer"/>
+
+
+	<!-- crawlurl Pipeline -->
+	<bean id="crawlPipeline" class="org.hustsse.spider.framework.DefaultPipeline" scope="prototype">
+		<constructor-arg>
+			<ref bean="crawlUrlSink" />
+		</constructor-arg>
+
+		<constructor-arg>
+			<list>
+				<ref bean="dnsResolver"/>
+				<ref bean="nioFetcher"/>
+				<ref bean="extractorHttp"/>
+				<ref bean="extractorHTML"/>
+				<ref bean="simpleWriter"/>
+				<ref bean="candidateHandler"/>
+			</list>
+		</constructor-arg>
+	</bean>
+
+	<!-- Frontier -->
+	<bean class="org.hustsse.spider.framework.Frontier" />
+	<!-- Url unique filter -->
+	<bean class="org.hustsse.spider.filter.BloomFilterUrlUniqFilter"/>
+	<bean class="org.hustsse.spider.workqueue.RedisWorkQueueFactory">
+		<property name="configFile" value="classpath:redis.properties"/>
+	</bean>
+
+	<!-- CrawlController配置 -->
+	<bean class="org.hustsse.spider.model.CrawlController">
+		<property name="crawlThreadNum" value="1" />
+		<!--<property name="crawlThreadPool" ref="crawlThreadPool" />-->
+		<!-- 只有CrawlURL的Pipeline是注入到CrawlController中的，Candidate Pipeline是注入到Handler中的 -->
+    <property name="pipelineId" value="crawlPipeline"/>
+    <property name="seeds">
+			<list>
+				<value>http://www.topit.me</value>
+				<!--<value>http://www.haodf.com</value>-->
+				<value>http://www.douban.com</value>
+				<value>http://www.songtaste.com/song/1199232/</value>
+				<value>http://www.taobao.com</value>
+				<value>http://www.360buy.com</value>
+				<value>http://bbs.nju.edu.cn/board?board=Pictures</value>
+			</list>
+		</property>
+	</bean>
+
+	<!--<bean id="crawlThreadPool"
+		class="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor">
+		<property name="corePoolSize" value="1" />
+		<property name="keepAliveSeconds" value="200" />
+		<property name="maxPoolSize" value="2" />
+	</bean>-->
+
+</beans>
