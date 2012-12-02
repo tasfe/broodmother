@@ -27,6 +27,8 @@ public class CrawlJob {
 	private static final String DEFAULT_JOB_LIB_DIR = "lib";
 	/** job配置文件，job启动时将通过该文件初始化Spring容器。 */
 	private static final String DEFAULT_JOB_CONFIG_FILE = "job.xml";
+	private static final String DEFAULT_JOB_CONF_DIR = "conf";
+	private static final String DEFAULT_GLOBAL_CONF_DIR = "conf";
 	private String name;
 	/** job使用的Spring Container。 */
 	private FileSystemXmlApplicationContext container;
@@ -99,6 +101,22 @@ public class CrawlJob {
 				}
 			}
 		}
+		// add the "job conf" & "global conf" directory to classpath
+		File jobConf = new File(jobDir.getAbsoluteFile() + File.separator + DEFAULT_JOB_CONF_DIR);
+		if(jobConf.exists()) {
+			try {
+				libs.add(jobConf.toURI().toURL());
+			} catch (MalformedURLException e) {
+			}
+		}
+		File globalConf = new File(jobDir.getParentFile().getParentFile().getAbsoluteFile() + File.separator + DEFAULT_GLOBAL_CONF_DIR);
+		if(globalConf.exists()) {
+			try {
+				libs.add(globalConf.toURI().toURL());
+			} catch (MalformedURLException e) {
+			}
+		}
+
 		URLClassLoader jobClassLoader = new URLClassLoader(libs.toArray(new URL[libs.size()]));
 		return jobClassLoader;
 	}
