@@ -24,6 +24,7 @@ public class SimpleFileWriter extends AbstractBeanNameAwareHandler {
 	public void process(HandlerContext ctx, CrawlURL url) {
 		File jobDir = ctx.getController().getCrawlJob().getJobDir();
 		File pageDir =  new File(jobDir.getAbsolutePath() + File.separator + PAGE_REPO) ;
+//		File pageDir =  new File("R:\\") ;
 		if(!pageDir.exists())
 			pageDir.mkdir();
 		File hostDir = new File(pageDir.getAbsoluteFile() + File.separator + url.getWorkQueueKey().replace(':', '_'));
