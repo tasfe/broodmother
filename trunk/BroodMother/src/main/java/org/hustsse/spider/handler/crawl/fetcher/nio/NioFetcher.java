@@ -129,6 +129,7 @@ public class NioFetcher extends AbstractBeanNameAwareHandler {
 				channel.configureBlocking(false);
 
 				// 构造服务器地址，DNS已经在上一级的DnsResolver中被解析
+//				SocketAddress reomteAddress = new InetSocketAddress(url.getURL().getHost(), url.getURL().getPort());
 				SocketAddress reomteAddress = new InetSocketAddress(url.getDns().getIp(), url.getURL().getPort());
 
 				// 发起connect请求，若立即connect成功，成功则注册到Reactor
@@ -142,9 +143,9 @@ public class NioFetcher extends AbstractBeanNameAwareHandler {
 					 */
 					url.setHandlerAttr(_CONNECT_SUCCESS_MILLIS, System.currentTimeMillis());
 					// 连接成功后立刻发送http请求。考虑到Http请求一般不会太大（GET），目前的处理方式是一旦连接上立刻发送并假设一定可以发送成功
+					nextReactor().register(channel, url);
 					sendHttpRequest(channel, url);
 					ctx.pause();
-					nextReactor().register(channel, url);
 				} else {
 					// 立即connect失败则注册到Boss，监听其OP_CONNECT状态
 					url.setHandlerAttr(_CONNECT_ATTEMPT_MILLIS, System.currentTimeMillis());
@@ -440,8 +441,8 @@ public class NioFetcher extends AbstractBeanNameAwareHandler {
 						url.setHandlerAttr(_CONNECT_SUCCESS_MILLIS, System.currentTimeMillis());
 						key.cancel();
 						try {
-							sendHttpRequest(channel, url);
 							nextReactor().register(channel, url);
+							sendHttpRequest(channel, url);
 						} catch (IOException e) {
 							// send http request failed
 							logger.debug("发送http请求失败，url：{},重试次数：{}", new Object[] { url, url.getRetryTimes(), e });
